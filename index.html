@@ -124,12 +124,39 @@
         import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // Global Firebase Configuration
-        setLogLevel('Debug');
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
-        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        // --- FIREBASE CONFIGURATION SETUP ---
+        
+        // Configuration provided by the user (for external deployment/Capacitor)
+        const localFirebaseConfig = {
+            apiKey: "AIzaSyCWEJOsUXTjdkYPUF_Iz6j5siieTJw5Rs0",
+            authDomain: "impostergame-dev.firebaseapp.com",
+            projectId: "impostergame-dev",
+            storageBucket: "impostergame-dev.firebasestorage.app",
+            messagingSenderId: "619697208061",
+            appId: "1:619697208061:web:0a62ff8e6a9a701140dc94",
+            measurementId: "G-C1HWQ86HV3"
+        };
+        
+        // 1. Get app ID (Canvas variable or fallback to local projectId)
+        const appId = typeof __app_id !== 'undefined' ? __app_id : localFirebaseConfig.projectId;
+        
+        // 2. Get Firebase Config (Canvas variable or fallback to local config)
+        let firebaseConfig;
+        if (typeof __firebase_config !== 'undefined' && __firebase_config) {
+             try {
+                firebaseConfig = JSON.parse(__firebase_config);
+             } catch (e) {
+                console.error("Failed to parse __firebase_config. Falling back to local config.", e);
+                firebaseConfig = localFirebaseConfig;
+             }
+        } else {
+             firebaseConfig = localFirebaseConfig;
+        }
+
+        // 3. Get Auth Token (Canvas variable or fallback to null)
         const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
+        setLogLevel('Debug');
         let app, db, auth;
         let userId = null;
         let currentLobbyId = null;
@@ -165,16 +192,19 @@
         async function initializeFirebase() {
             try {
                 updateStatus("Initializing Firebase...");
-                app = initializeApp(firebaseConfig);
+                // Initialize using the determined config
+                app = initializeApp(firebaseConfig); 
                 db = getFirestore(app);
                 auth = getAuth(app);
 
                 // Authenticate user
                 updateStatus("Authenticating...");
                 if (initialAuthToken) {
+                    // Use custom token if available (Canvas environment)
                     await signInWithCustomToken(auth, initialAuthToken);
                 } else {
-                    await signInAnonymously(auth);
+                    // Fallback to anonymous sign-in (External environment)
+                    await signInAnonymously(auth); 
                 }
 
                 // Wait for auth state to resolve
@@ -186,7 +216,7 @@
                         // Check if the user was in a lobby previously (optional, for robustness)
                     } else {
                         updateStatus("Authentication failed. Critical failure.");
-                        console.error("Firebase Init Error: Firebase: Error (auth/configuration-not-found).. Critical failure.");
+                        console.error("Firebase Init Error: Authentication failed. Critical failure.");
                     }
                 });
 
@@ -199,9 +229,9 @@
         // --- LOBBY CONFIGURATION ---
         
         // **********************************************
-        // * THE FIX IS HERE: MAX_PLAYERS IS INCREASED *
+        // * MAX_PLAYERS IS 100 *
         // **********************************************
-        const MAX_PLAYERS = 100; // Increased from 2 or 4 to 100
+        const MAX_PLAYERS = 100; 
 
         const MIN_PLAYERS_TO_START = 3; 
 
@@ -262,7 +292,7 @@
                     return;
                 }
                 
-                // Check if lobby is full using the new MAX_PLAYERS setting
+                // Check if lobby is full using the MAX_PLAYERS setting
                 if (lobbyData.players.length >= MAX_PLAYERS) {
                     displayErrorMessage(`Lobby ${lobbyId} is full! Max: ${MAX_PLAYERS}`);
                     return;
