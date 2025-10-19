@@ -57,6 +57,13 @@
             font-size: 1.1rem;
         }
         .imposter-role { background-color: #e53e3e; }
+        .turn-display {
+            background-color: #0c4a6e;
+            padding: 0.5rem 1rem;
+            border-radius: 0.5rem;
+            font-size: 1.25rem;
+            font-weight: 700;
+        }
     </style>
 </head>
 <body class="p-4 flex items-center justify-center min-h-screen font-sans">
@@ -138,7 +145,8 @@
                         <p class="text-sm text-gray-400 font-bold" id="game-phase-label">Status: Active</p>
                     </div>
                     <div class="text-right">
-                         <p class="text-xl font-extrabold text-[#48dbfb]" id="round-timer">00:00</p>
+                         <!-- This now shows TURN status, not a countdown -->
+                         <p class="text-xl font-extrabold text-[#48dbfb]" id="round-timer">Submission Based</p>
                          <button id="call-vote-btn" class="text-sm text-yellow-400 hover:text-yellow-300 disabled:opacity-50" disabled>Call Emergency Vote</button>
                     </div>
                 </div>
@@ -169,6 +177,10 @@
                 <h2 class="text-3xl font-bold text-center text-[#ff6b6b]">VOTING PHASE!</h2>
                 <p class="text-center text-lg text-gray-300" id="voting-reason">Time is up. Who is the Imposter?</p>
                 
+                <div class="turn-display mx-auto text-center" id="voting-timer-display">
+                    Time Remaining: 10s
+                </div>
+
                 <h3 class="text-xl font-semibold mt-4">Vote to eject:</h3>
                 <ul id="voting-list" class="space-y-2 p-3 rounded-lg bg-gray-700 max-h-60 overflow-y-auto">
                     <!-- Voting buttons go here -->
@@ -235,18 +247,18 @@
         let currentLobbyId = null;
         let unsubscribeLobby = null;
         let localPlayerRole = null;
-        let hostTimerInterval = null; // Timer for the host to manage rounds
+        let hostTimerInterval = null; // Timer for the host to manage cooldowns/voting
 
         // --- GAME CONSTANTS ---
         const MAX_PLAYERS = 100; 
         const MIN_PLAYERS_TO_START = 3; 
         const IMPOSTER_COUNT = 1; 
-        const ROUND_DURATION_SECONDS = 120; // 2 minutes
-        const COOLDOWN_DURATION_SECONDS = 5; // 5 seconds
+        const COOLDOWN_DURATION_SECONDS = 5; 
+        const VOTING_DURATION_SECONDS = 10; // New constant for voting time
         const TOTAL_ROUNDS = 4;
         
         // Simple word list for the crewmates
-        const WORD_LIST = ["SPACESHIP", "GALAXY", "PIZZA", "OCEAN", "MOUNTAIN", "KEYBOARD", "BOOK", "FARMER"];
+        const WORD_LIST = ["SPACESHIP", "GALAXY", "PIZZA", "OCEAN", "MOUNTAIN", "KEYBOARD", "BOOK", "FARMER", "TELEVISION", "COMPUTER", "PROGRAMMER", "ELEPHANT", "GIRAFFE", "TIGER", "PENGUIN", "WHALE", "SHARK", "DOLPHIN", "BUTTERFLY", "DRAGONFLY", "SUNFLOWER", "RAINBOW", "THUNDERSTORM", "LIGHTNING", "WATERFALL", "DESERT", "VOLCANO", "JUNGLE", "FOREST", "RIVER", "BEACH", "ISLAND", "VOLLEYBALL", "BASKETBALL", "FOOTBALL", "SOCCER", "HOCKEY", "CHESS", "MONOPOLY", "JIGSAW", "PUZZLE", "GUITAR", "PIANO", "VIOLIN", "DRUMS", "SAXOPHONE", "FLUTE", "MICROPHONE", "HEADPHONES", "SPEAKER", "MONITOR", "MOUSE", "LAPTOP", "TABLET", "SMARTPHONE", "PRINTER", "SCANNER", "CAMERA", "BICYCLE", "CAROUSEL", "ROLLERCOASTER", "FERRISWHEEL", "BRIDGE", "TUNNEL", "HIGHWAY", "AIRPORT", "SUBMARINE", "HELICOPTER", "SATELLITE", "COMET", "METEOR", "ASTEROID", "STAR", "PLANET", "MOON", "SUN", "UNIVERSE", "COFFEE", "ORANGE", "BANANA", "STRAWBERRY", "CHOCOLATE", "VANILLA", "BREAD", "CHEESE", "PASTA", "BURRITO", "TACO", "SUSHI", "NOODLES", "PANCAKE", "WAFFLE", "CEREAL", "TOAST", "SANDWICH", "HOTDOG", "BURGER", "FRENCHFRIES", "BACON", "EGG", "COWBOY", "PIRATE", "NINJA", "SAMURAI", "WIZARD", "FAIRY", "MERMAID", "DRAGON", "UNICORN", "PHOENIX", "GHOST", "ZOMBIE", "VAMPIRE", "WEREWOLF", "MUMMY", "FRANKENSTEIN", "ROBOT", "SUPERHERO", "VILLAIN"];
 
         // --- UI ELEMENT REFERENCES ---
 
@@ -263,7 +275,7 @@
         const leaveLobbyBtn = document.getElementById('leave-lobby-btn');
         const leaveGameBtn = document.getElementById('leave-game-btn');
         
-        const playerCountEl = document.getElementById('player-count'); // Reference for the count
+        const playerCountEl = document.getElementById('player-count'); 
         
         const playerRoleTextEl = document.getElementById('player-role-text');
         const secretWordDisplayEl = document.getElementById('secret-word-display');
@@ -279,6 +291,7 @@
 
         const votingReasonEl = document.getElementById('voting-reason');
         const votingListEl = document.getElementById('voting-list');
+        const votingTimerDisplayEl = document.getElementById('voting-timer-display');
         const skipVoteBtn = document.getElementById('skip-vote-btn');
         
         const winMessageEl = document.getElementById('win-message');
@@ -322,12 +335,19 @@
                 [array[i], array[j]] = [array[j], array[i]];
             }
         }
-
+        
         // --- GAME FLOW CORE FUNCTIONS ---
         
         /**
-         * Host-only function to advance the game state based on the timer.
-         * Runs every second while the game is active.
+         * Host-only function to force the end of the voting phase regardless of vote completion.
+         */
+        async function resolveVotingPhase(data) {
+             // Host runs the check to tally and transition state
+             await checkVoteResult(data); 
+        }
+
+        /**
+         * Host-only function to manage the game progression based on time (Cooldown and Voting).
          */
         async function runHostTimer(lobbyId) {
             if (hostTimerInterval) clearInterval(hostTimerInterval);
@@ -352,53 +372,39 @@
                 const now = Date.now();
                 const timeRemaining = data.roundEndTime ? data.roundEndTime - now : 0;
                 
+                // Update timer UI for voting
+                if (data.gameState === 'voting') {
+                    const seconds = Math.floor(timeRemaining / 1000);
+                    votingTimerDisplayEl.textContent = timeRemaining > 0 ? `Time Remaining: ${seconds}s` : 'Time is up!';
+                }
+
+
                 if (timeRemaining <= 0) {
                     // Time is up, advance state
                     let updateData = {};
                     
-                    if (data.gameState === 'round_active') {
-                        // Move to Cooldown or Voting
-                        if (data.currentRound < TOTAL_ROUNDS) {
-                            // Start Cooldown
-                            const nextRound = data.currentRound + 1;
-                            updateData = {
-                                gameState: 'cooldown',
-                                roundEndTime: now + COOLDOWN_DURATION_SECONDS * 1000,
-                                // Reset descriptions for the next round
-                                descriptions: {} 
-                            };
-                            updateStatus(`Host: Round ${data.currentRound} ended. ${COOLDOWN_DURATION_SECONDS}s cooldown...`);
-                        } else {
-                            // Move to Final Voting
-                            updateData = {
-                                gameState: 'voting',
-                                roundEndTime: null,
-                                votingReason: 'Final vote: All description rounds complete.'
-                            };
-                            updateStatus("Host: Final round ended. Starting vote.");
-                        }
-                        
-                    } else if (data.gameState === 'cooldown') {
-                        // Move to Next Round Active
-                        const nextRound = data.currentRound + 1;
-                        if (nextRound <= TOTAL_ROUNDS) {
+                    if (data.gameState === 'cooldown') {
+                        // Move to Next Round Active, reset descriptions, and set the first speaker
+                        const nextRound = data.currentRound; // Round already incremented in submitDescription
+                        const firstSpeakerId = data.turnOrder[0];
+
+                        if (nextRound <= data.totalRounds) {
                              updateData = {
                                 gameState: 'round_active',
-                                currentRound: nextRound,
-                                roundEndTime: now + ROUND_DURATION_SECONDS * 1000,
-                                descriptions: {} // Clear descriptions again, just in case
+                                currentSpeakerId: firstSpeakerId,
+                                descriptions: {}, 
+                                roundEndTime: null // Submission based, no timer needed
                             };
-                            updateStatus(`Host: Starting Round ${nextRound}`);
-                        } else {
-                            // Should have moved to voting in the previous state check, but handle fallback
-                             updateData = {
-                                gameState: 'voting',
-                                roundEndTime: null,
-                                votingReason: 'Final vote: All description rounds complete.'
-                            };
-                        }
+                            updateStatus(`Host: Starting Round ${nextRound}. Turn: ${data.roles.find(p => p.id === firstSpeakerId)?.name}`);
+                        } 
+                        
+                    } else if (data.gameState === 'voting') {
+                        // Voting time is over (10 seconds) - force vote resolution
+                        clearInterval(hostTimerInterval);
+                        await resolveVotingPhase(data); 
+                        return;
                     } else {
-                        // Game state is 'voting' or 'finished', stop host timer
+                        // Game state is 'finished', stop host timer
                         clearInterval(hostTimerInterval);
                         return;
                     }
@@ -414,7 +420,7 @@
             const lobbyRef = getLobbyDocRef(lobbyId);
             
             // 1. Assign Roles
-            const playerIds = players.map(p => p.id);
+            let playerIds = players.map(p => p.id);
             shuffleArray(playerIds);
             const imposterId = playerIds[0];
 
@@ -424,15 +430,31 @@
                 isEliminated: false,
                 hasVoted: false,
                 vote: null,
-                name: player.name || `Player_${player.id.substring(0, 4)}` // Ensure names are set
+                name: player.name || `Player_${player.id.substring(0, 4)}` 
             }));
             
             // 2. Select Secret Word
             shuffleArray(WORD_LIST);
             const secretWord = WORD_LIST[0];
 
-            // 3. Set Initial Game State
-            const now = Date.now();
+            // 3. Generate Turn Order and ensure Imposter is NOT first
+            let turnOrder = playerRoles.filter(p => !p.isEliminated).map(p => p.id);
+            shuffleArray(turnOrder); 
+            
+            let imposterIndex = turnOrder.indexOf(imposterId);
+            if (imposterIndex === 0 && turnOrder.length > 1) {
+                // Swap the imposter (at index 0) with a player at a random position > 0
+                const swapIndex = Math.floor(Math.random() * (turnOrder.length - 1)) + 1;
+                [turnOrder[0], turnOrder[swapIndex]] = [turnOrder[swapIndex], turnOrder[0]];
+            } else if (imposterIndex === 0 && turnOrder.length === 1) {
+                // Should not happen as min players is 3, but prevents crash
+                 console.warn("Imposter is the only player. Game will likely fail.");
+            }
+
+            const currentSpeakerId = turnOrder[0];
+
+
+            // 4. Set Initial Game State
             const gameData = {
                 id: lobbyId,
                 status: 'in_game',
@@ -442,10 +464,12 @@
                 hostId: userId,
                 currentRound: 1,
                 totalRounds: TOTAL_ROUNDS,
-                roundEndTime: now + ROUND_DURATION_SECONDS * 1000,
-                descriptions: {}, // { playerId: description } for the current round
-                votes: {}, // { voterId: votedPlayerId } for the voting phase
-                createdAt: new Date().toISOString()
+                descriptions: {}, 
+                votes: {}, 
+                // NEW TURN-BASED FIELDS
+                turnOrder: turnOrder,
+                currentSpeakerId: currentSpeakerId,
+                roundEndTime: null // Submission based, no timer needed
             };
             
             try {
@@ -468,29 +492,73 @@
             const docSnap = await getDoc(lobbyRef);
             const data = docSnap.data();
 
-            if (data.roles.find(p => p.id === userId && p.isEliminated)) {
+            if (data.currentSpeakerId !== userId) {
+                 displayErrorMessage("It is not your turn to submit a description.");
+                 return;
+            }
+            
+            const localPlayer = data.roles.find(p => p.id === userId);
+
+            if (!localPlayer || localPlayer.isEliminated) {
                 displayErrorMessage("You are eliminated and cannot submit descriptions.");
                 return;
             }
             
-            // Do not allow submission if not in active round
             if (data.gameState !== 'round_active') {
                 displayErrorMessage("Cannot submit description outside of an active round.");
                 return;
             }
 
             try {
-                // Update the descriptions map with the player's submission
+                // 1. Update the descriptions map with the player's submission
                 const newDescriptions = { 
                     ...data.descriptions, 
                     [userId]: description.trim() 
                 };
                 
-                await updateDoc(lobbyRef, { descriptions: newDescriptions });
+                // 2. --- ADVANCE TURN LOGIC (Executed by the submitting player) ---
+                const currentSpeakerIndex = data.turnOrder.indexOf(userId);
+                const nextSpeakerIndex = (currentSpeakerIndex + 1) % data.turnOrder.length;
+                const nextSpeakerId = data.turnOrder[nextSpeakerIndex];
+
+                let updateData = { descriptions: newDescriptions };
+
+                if (nextSpeakerIndex === 0) {
+                    // Cycle complete - check if we advance round or go to voting
+                    const nextRound = data.currentRound + 1;
+                    
+                    if (nextRound <= data.totalRounds) {
+                        // Move to Cooldown
+                        updateData.gameState = 'cooldown';
+                        updateData.currentRound = nextRound;
+                        updateData.roundEndTime = Date.now() + COOLDOWN_DURATION_SECONDS * 1000;
+                        updateData.currentSpeakerId = nextSpeakerId; // Set speaker for next active round
+                        updateData.descriptions = {}; // Clear descriptions for the start of the next round
+                        updateStatus(`Round ${data.currentRound} complete. Cooldown started.`);
+                    } else {
+                        // All rounds complete - move to Final Voting
+                        updateData.gameState = 'voting';
+                        updateData.votingReason = 'Final vote: All description rounds complete.';
+                        updateData.roundEndTime = Date.now() + VOTING_DURATION_SECONDS * 1000; // 10 seconds for voting
+                        updateData.currentSpeakerId = null;
+                        updateStatus("All rounds complete. Starting final vote.");
+                    }
+
+                } else {
+                    // Move to next player in the turn order
+                    updateData.currentSpeakerId = nextSpeakerId;
+                    updateStatus(`Turn advanced to ${data.roles.find(p => p.id === nextSpeakerId)?.name}`);
+                }
+
+                await updateDoc(lobbyRef, updateData);
+                
+                // UI updates for the submitting player
                 submissionStatusEl.textContent = 'Submitted!';
                 submissionStatusEl.classList.remove('hidden');
+                descriptionInputEl.value = ''; // Clear input after submission
                 submitDescriptionBtn.disabled = true;
                 descriptionInputEl.disabled = true;
+
             } catch (error) {
                 displayErrorMessage(`Submission error: ${error.message}`);
                 console.error("Description Submission Error:", error);
@@ -503,7 +571,7 @@
             const data = docSnap.data();
 
             const localPlayer = data.roles.find(p => p.id === userId);
-            if (!localPlayer || localPlayer.hasVoted || localPlayer.isEliminated) return;
+            if (!localPlayer || localPlayer.hasVoted || localPlayer.isEliminated || data.gameState !== 'voting') return;
 
             try {
                 // Update the local player's vote state
@@ -514,14 +582,15 @@
                     return p;
                 });
 
-                // Calculate the number of votes cast *after* this one
+                // The host will resolve the vote when the timer runs out, 
+                // but we keep the voteCount to handle early resolution if all votes are cast.
                 const newVoteCount = updatedRoles.filter(p => p.hasVoted).length;
                 
                 await updateDoc(lobbyRef, {
                     roles: updatedRoles,
-                    voteCount: newVoteCount // This triggers the host to check results
+                    voteCount: newVoteCount 
                 });
-                updateStatus(`Voted. Waiting for others.`);
+                updateStatus(`Voted. Waiting for vote resolution.`);
 
             } catch (error) {
                 displayErrorMessage(`Voting error: ${error.message}`);
@@ -529,12 +598,9 @@
         }
 
         async function checkVoteResult(data) {
+            const lobbyRef = getLobbyDocRef(data.id);
             const activePlayers = data.roles.filter(p => !p.isEliminated);
-            const totalVotesExpected = activePlayers.length;
-            const votesCast = data.roles.filter(p => p.hasVoted).length;
-
-            if (votesCast < totalVotesExpected) return; // Wait for all votes
-
+            
             // Tally votes
             const tallies = {};
             data.roles.forEach(p => {
@@ -575,23 +641,18 @@
 
                 updateData = {
                     roles: updatedRoles,
-                    // Determine end state
-                    status: imposterEjected ? 'finished' : 'in_game',
-                    gameState: 'cooldown', // Always go to cooldown after a vote/ejection
+                    status: 'finished', // Game ends immediately on successful Imposter ejection
+                    gameState: 'finished',
                     winner: imposterEjected ? 'crewmate' : null,
-                    // If continuing, set up the next round/cooldown
-                    currentRound: data.currentRound, 
-                    roundEndTime: imposterEjected ? null : Date.now() + COOLDOWN_DURATION_SECONDS * 1000, 
                 };
                 
             } else {
-                // Tie or no votes cast (skip vote) - return to game
+                // Tie or skip vote - game continues
                 updateData = {
-                    gameState: 'cooldown', // Always move to cooldown after a skipped or tied vote
+                    gameState: 'cooldown', // Go to cooldown after a skipped or tied vote
                     currentRound: data.currentRound, 
                     roundEndTime: Date.now() + COOLDOWN_DURATION_SECONDS * 1000,
                 };
-                updateStatus("Host: Vote resulted in a tie or skip. Moving to cooldown.");
             }
             
             // Reset voting state and apply elimination (if any)
@@ -604,40 +665,19 @@
             
             // Only host updates the doc after processing votes
             if (data.hostId === userId) {
-                 await updateDoc(getLobbyDocRef(data.id), updateData);
+                 await updateDoc(lobbyRef, updateData);
             }
         }
         
-        async function callEmergencyVote(lobbyId) {
-            const lobbyRef = getLobbyDocRef(lobbyId);
-            try {
-                const docSnap = await getDoc(lobbyRef);
-                const data = docSnap.data();
-
-                if (data.hostId !== userId) {
-                    displayErrorMessage("Only the host can call an emergency vote.");
-                    return;
-                }
-
-                if (data.gameState !== 'voting') {
-                    await updateDoc(lobbyRef, {
-                        gameState: 'voting',
-                        votingReason: `Emergency Vote called by Host!`,
-                        roundEndTime: null // Pause timer
-                    });
-                    updateStatus("Emergency Vote called!");
-                }
-            } catch (error) {
-                displayErrorMessage(`Vote error: ${error.message}`);
-            }
-        }
+        // Removed callEmergencyVote to simplify the turn-based flow for now.
+        // It can be added back later if desired.
 
         async function endGame(lobbyId, winner, roles) {
             const lobbyRef = getLobbyDocRef(lobbyId);
             if (hostTimerInterval) clearInterval(hostTimerInterval);
 
             // Only host updates the final state
-            if (roles.find(p => p.id === userId)?.role === 'imposter' || roles.find(p => p.id === userId)?.isHost || data.hostId === userId) {
+            if (roles.find(p => p.id === userId)?.role === 'imposter' || data.hostId === userId) {
                  await updateDoc(lobbyRef, {
                     status: 'finished',
                     gameState: 'finished',
@@ -652,7 +692,7 @@
         
         function subscribeToLobby(lobbyId) {
             if (unsubscribeLobby) unsubscribeLobby();
-            if (hostTimerInterval) clearInterval(hostTimerInterval); // Ensure timer is stopped before starting new listener
+            if (hostTimerInterval) clearInterval(hostTimerInterval); 
 
             const lobbyRef = getLobbyDocRef(lobbyId);
             
@@ -665,7 +705,7 @@
                         renderLobbyDetails(lobbyData);
                     } else if (lobbyData.status === 'in_game') {
                         // Start or restart host timer if we are the host and game is active
-                        if (lobbyData.hostId === userId && (lobbyData.gameState === 'round_active' || lobbyData.gameState === 'cooldown')) {
+                        if (lobbyData.hostId === userId && (lobbyData.gameState === 'cooldown' || lobbyData.gameState === 'voting')) {
                              runHostTimer(lobbyId);
                         }
                         renderGameController(lobbyData);
@@ -692,11 +732,11 @@
             const localPlayer = data.roles.find(p => p.id === userId);
             localPlayerRole = localPlayer ? localPlayer.role : null;
             
-            // Check win condition on every update (Crewmates win if Imposter is eliminated, or Imposter wins if all rounds are over and they are safe)
-            const imposterEliminated = data.roles.find(p => p.role === 'imposter' && p.isEliminated);
+            // Check win condition on every update
+            const imposter = data.roles.find(p => p.role === 'imposter');
             const activeCrewmates = data.roles.filter(p => p.role === 'crewmate' && !p.isEliminated);
 
-            if (imposterEliminated) {
+            if (imposter.isEliminated) {
                 endGame(data.id, 'crewmate', data.roles);
                 return;
             }
@@ -717,10 +757,6 @@
                 gameActiveViewEl.classList.add('hidden');
                 votingViewEl.classList.remove('hidden');
                 renderVotingView(data);
-                // Host checks vote result once all votes are in
-                if (data.hostId === userId) {
-                     checkVoteResult(data);
-                }
             } else {
                 votingViewEl.classList.add('hidden');
                 gameActiveViewEl.classList.remove('hidden');
@@ -732,7 +768,6 @@
             const players = lobbyData.players || [];
             playersListEl.innerHTML = '';
             
-            // Update the prominent player count
             playerCountEl.textContent = players.length; 
 
             const isHost = lobbyData.hostId === userId;
@@ -778,47 +813,56 @@
             // 2. Round Info
             currentRoundNumberEl.textContent = data.currentRound;
             totalRoundsNumberEl.textContent = data.totalRounds;
-            gamePhaseLabelEl.textContent = data.gameState === 'cooldown' ? 'Status: COOLDOWN' : 'Status: ACTIVE';
             
-            // 3. Timer
-            const now = Date.now();
-            const timeRemaining = data.roundEndTime ? Math.max(0, data.roundEndTime - now) : 0;
-            const seconds = Math.floor(timeRemaining / 1000);
-            const minutes = Math.floor(seconds / 60);
-            const secs = seconds % 60;
-            roundTimerEl.textContent = `${minutes.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+            const currentSpeaker = data.roles.find(p => p.id === data.currentSpeakerId)?.name || 'Unknown';
+            const isMyTurn = data.currentSpeakerId === userId;
             
-            // 4. Submission Area
+            roundTimerEl.textContent = data.gameState === 'cooldown' ? 'COOLDOWN' : 'Submission Based'; 
+            
+            // Update the game phase label to show whose turn it is
+            gamePhaseLabelEl.innerHTML = data.gameState === 'cooldown' 
+                ? 'Status: COOLDOWN' 
+                : isMyTurn 
+                    ? '<span class="text-green-400 font-extrabold">YOUR TURN!</span>'
+                    : `Turn: <span class="text-[#48dbfb] font-extrabold">${currentSpeaker}</span>`;
+
+
+            // 3. Submission Area
             const submitted = !!data.descriptions[userId];
             const isActive = data.gameState === 'round_active';
             
-            descriptionInputEl.disabled = submitted || !isActive || isEliminated;
-            submitDescriptionBtn.disabled = submitted || !isActive || isEliminated || !descriptionInputEl.value.trim();
+            // Only enabled if it's the player's turn, game is active, and they aren't eliminated.
+            const isEnabled = isMyTurn && isActive && !isEliminated; 
             
-            submissionStatusEl.classList.toggle('hidden', !submitted);
+            descriptionInputEl.disabled = !isEnabled;
+            submitDescriptionBtn.disabled = !isEnabled || !descriptionInputEl.value.trim();
+            
+            // Hide/Show submission status only when it's not the player's turn or after they submitted
+            submissionStatusEl.classList.toggle('hidden', isMyTurn || !submitted);
             submissionStatusEl.textContent = submitted ? 'Submitted!' : '';
             
             descriptionInputEl.oninput = () => {
-                 submitDescriptionBtn.disabled = submitted || !isActive || isEliminated || !descriptionInputEl.value.trim();
+                 submitDescriptionBtn.disabled = !isEnabled || !descriptionInputEl.value.trim();
             };
 
-            // 5. Descriptions List
+            // 4. Descriptions List
             descriptionsListEl.innerHTML = '';
             const playerNames = data.roles.reduce((acc, p) => { acc[p.id] = p.name; return acc; }, {});
 
-            // Sort descriptions by player name for consistency
             const submittedDescriptions = Object.entries(data.descriptions).map(([playerId, description]) => ({
                 name: playerNames[playerId] || playerId.substring(0, 4),
                 description: description,
-                isEliminated: data.roles.find(p => p.id === playerId)?.isEliminated
+                isEliminated: data.roles.find(p => p.id === playerId)?.isEliminated,
+                isSpeaker: playerId === data.currentSpeakerId
             })).sort((a, b) => a.name.localeCompare(b.name));
             
-            if (submittedDescriptions.length === 0) {
+            if (submittedDescriptions.length === 0 && data.gameState === 'round_active') {
                  descriptionsListEl.innerHTML = '<li class="text-gray-400 text-center">Descriptions will appear here after submission.</li>';
             } else {
                 submittedDescriptions.forEach(desc => {
                     const li = document.createElement('li');
                     li.className = `p-3 rounded-lg bg-gray-600 border-l-4 ${desc.isEliminated ? 'border-gray-500 text-gray-500 line-through' : 'border-[#48dbfb]'}`;
+                    
                     li.innerHTML = `
                         <span class="font-bold">${desc.name}:</span> 
                         <span class="ml-2">${desc.description}</span>
@@ -827,8 +871,8 @@
                 });
             }
             
-            // 6. Host Button
-            callVoteBtn.disabled = !isHost || data.gameState === 'cooldown' || data.gameState === 'voting';
+            // 5. Host Button (disabled since turn-based flow makes it complicated, keeping it disabled for now)
+            callVoteBtn.disabled = true;
         }
         
         function renderVotingView(data) {
@@ -866,6 +910,8 @@
                 
                 votingListEl.appendChild(li);
             });
+            
+            // TIMER UI is updated by the host timer interval
         }
 
         function enterLobbyView(lobbyId) {
@@ -882,7 +928,7 @@
             
             const winner = data.winner === 'crewmate' ? 'CREWMATES WIN!' : 'IMPOSTER WINS!';
             winMessageEl.textContent = winner;
-            winMessageEl.classList.remove('text-green-500', 'text-red-500'); // Clear previous classes
+            winMessageEl.classList.remove('text-green-500', 'text-red-500'); 
             winMessageEl.classList.add(data.winner === 'crewmate' ? 'text-green-500' : 'text-red-500');
 
             finalSecretWordEl.textContent = data.secretWord;
@@ -966,9 +1012,8 @@
              submitVote(null, currentLobbyId); // null vote means skip
         });
         
-        callVoteBtn.addEventListener('click', () => {
-             callEmergencyVote(currentLobbyId); 
-        });
+        // Removed callVoteBtn listener since the flow is now turn-based and time-based.
+
 
         // --- FIREBASE INITIALIZATION & AUTHENTICATION (MOVED TO BOTTOM FOR CLARITY) ---
 
@@ -1108,7 +1153,6 @@
         // --- APPLICATION START ---
         
         window.onload = initializeFirebase;
-
     </script>
 </body>
 </html>
