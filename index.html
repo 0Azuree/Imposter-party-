@@ -56,6 +56,9 @@
             height: 52px;
             font-size: 1.1rem;
         }
+        .crewmate-role { background-color: #38a169; } /* Tailwind green-600 */
+        .imposter-role { background-color: #e53e3e; } /* Tailwind red-600 */
+        .eliminated-player { text-decoration: line-through; color: #999; }
     </style>
 </head>
 <body class="p-4 flex items-center justify-center min-h-screen font-sans">
@@ -114,6 +117,65 @@
                     Leave Lobby
                 </button>
             </div>
+
+            <!-- Active Game View -->
+            <div id="game-active-view" class="hidden space-y-6">
+                <h2 class="text-2xl font-bold text-center">In Game: <span id="active-lobby-id" class="text-[#48dbfb]"></span></h2>
+                
+                <div id="role-display" class="text-center p-4 rounded-xl font-bold text-xl transition-all duration-500"></div>
+
+                <div id="game-info" class="space-y-2 p-3 rounded-lg bg-gray-700">
+                    <p class="text-lg font-bold text-[#48dbfb]">Game State: <span id="game-status-label" class="text-white"></span></p>
+                    <hr class="border-gray-600">
+                    <p>Tasks Completed: <span id="tasks-completed" class="font-semibold text-green-400">0</span> / <span id="tasks-total" class="font-semibold">0</span></p>
+                    <p>Imposters Left: <span id="imposter-count" class="font-semibold text-red-400">1</span></p>
+                    <p>Crewmates Left: <span id="crewmate-count" class="font-semibold text-green-400">0</span></p>
+                </div>
+                
+                <!-- Action Area (Tasks/Kill/Report) -->
+                <div id="action-area" class="space-y-4">
+                    <!-- Role-specific buttons appear here -->
+                </div>
+
+                <!-- Player list for elimination/voting -->
+                <h3 class="text-lg font-semibold mt-4">Current Players:</h3>
+                <ul id="active-players-list" class="space-y-2 p-3 rounded-lg bg-gray-700 max-h-40 overflow-y-auto">
+                    <!-- Active/Eliminated players names go here -->
+                </ul>
+                
+                <!-- Universal Button -->
+                <button id="leave-game-btn" class="w-full btn-secondary btn rounded-lg mt-4">
+                    Quit Game
+                </button>
+            </div>
+            
+            <!-- Voting View (Hidden by default) -->
+            <div id="voting-view" class="hidden space-y-6">
+                <h2 class="text-3xl font-bold text-center text-[#ff6b6b]">EMERGENCY MEETING!</h2>
+                <p class="text-center text-lg text-gray-300" id="meeting-reason">Someone was eliminated!</p>
+                
+                <h3 class="text-xl font-semibold mt-4">Who do you vote to eject?</h3>
+                <ul id="voting-list" class="space-y-2 p-3 rounded-lg bg-gray-700 max-h-60 overflow-y-auto">
+                    <!-- Voting buttons go here -->
+                </ul>
+                
+                <button id="skip-vote-btn" class="w-full bg-gray-500 hover:bg-gray-400 text-white font-bold py-3 px-4 rounded-lg">
+                    Skip Vote
+                </button>
+            </div>
+
+            <!-- Game Over View (Hidden by default) -->
+            <div id="game-over-view" class="hidden space-y-6">
+                <h2 class="text-4xl font-extrabold text-center" id="win-message"></h2>
+                <p class="text-center text-xl text-gray-300">Roles were:</p>
+                <ul id="final-roles-list" class="space-y-2 p-3 rounded-lg bg-gray-700">
+                    <!-- Final roles displayed here -->
+                </ul>
+                <button id="return-to-lobby-btn" class="w-full btn-secondary btn rounded-lg mt-4">
+                    Return to Lobby
+                </button>
+            </div>
+
         </div>
     </div>
     
@@ -161,19 +223,48 @@
         let userId = null;
         let currentLobbyId = null;
         let unsubscribeLobby = null;
+        let localPlayerRole = null; // Store the local player's assigned role
 
-        // --- UI UTILITIES ---
+        // --- GAME CONSTANTS ---
+        const MAX_PLAYERS = 100; 
+        const MIN_PLAYERS_TO_START = 3; 
+        const IMPOSTER_COUNT = 1; 
+        const TOTAL_TASKS_PER_PLAYER = 3; // Simplified task count
+
+        // --- UI ELEMENT REFERENCES ---
 
         const statusEl = document.getElementById('status-message');
         const lobbyViewEl = document.getElementById('lobby-view');
         const gameLobbyViewEl = document.getElementById('game-lobby-view');
+        const gameActiveViewEl = document.getElementById('game-active-view');
+        const votingViewEl = document.getElementById('voting-view');
+        const gameOverViewEl = document.getElementById('game-over-view');
+
         const currentLobbyIdEl = document.getElementById('current-lobby-id');
+        const activeLobbyIdEl = document.getElementById('active-lobby-id');
         const currentUserIdEl = document.getElementById('current-user-id');
         const playersListEl = document.getElementById('players-list');
         const playerCountEl = document.getElementById('player-count');
         const startGameBtn = document.getElementById('start-game-btn');
         const leaveLobbyBtn = document.getElementById('leave-lobby-btn');
+        const leaveGameBtn = document.getElementById('leave-game-btn');
+        const roleDisplayEl = document.getElementById('role-display');
+        const gameStatusLabelEl = document.getElementById('game-status-label');
+        const tasksCompletedEl = document.getElementById('tasks-completed');
+        const tasksTotalEl = document.getElementById('tasks-total');
+        const imposterCountEl = document.getElementById('imposter-count');
+        const crewmateCountEl = document.getElementById('crewmate-count');
+        const actionAreaEl = document.getElementById('action-area');
+        const activePlayersListEl = document.getElementById('active-players-list');
+        const votingListEl = document.getElementById('voting-list');
+        const skipVoteBtn = document.getElementById('skip-vote-btn');
+        const winMessageEl = document.getElementById('win-message');
+        const finalRolesListEl = document.getElementById('final-roles-list');
+        const returnToLobbyBtn = document.getElementById('return-to-lobby-btn');
+        const meetingReasonEl = document.getElementById('meeting-reason');
         
+        // --- UI UTILITIES ---
+
         function updateStatus(message) {
             statusEl.textContent = `STATUS: ${message}`;
         }
@@ -185,6 +276,14 @@
                  statusEl.classList.remove('bg-red-700', 'text-red-200');
                  statusEl.textContent = '';
              }, 5000);
+        }
+
+        function resetViews() {
+            lobbyViewEl.classList.remove('hidden');
+            gameLobbyViewEl.classList.add('hidden');
+            gameActiveViewEl.classList.add('hidden');
+            votingViewEl.classList.add('hidden');
+            gameOverViewEl.classList.add('hidden');
         }
 
         // --- FIREBASE INITIALIZATION & AUTHENTICATION ---
@@ -200,10 +299,8 @@
                 // Authenticate user
                 updateStatus("Authenticating...");
                 if (initialAuthToken) {
-                    // Use custom token if available (Canvas environment)
                     await signInWithCustomToken(auth, initialAuthToken);
                 } else {
-                    // Fallback to anonymous sign-in (External environment)
                     await signInAnonymously(auth); 
                 }
 
@@ -213,7 +310,7 @@
                         userId = user.uid;
                         updateStatus("Signed in anonymously. Ready to play.");
                         currentUserIdEl.textContent = userId;
-                        // Check if the user was in a lobby previously (optional, for robustness)
+                        resetViews();
                     } else {
                         updateStatus("Authentication failed. Critical failure.");
                         console.error("Firebase Init Error: Authentication failed. Critical failure.");
@@ -226,15 +323,6 @@
             }
         }
 
-        // --- LOBBY CONFIGURATION ---
-        
-        // **********************************************
-        // * MAX_PLAYERS IS 100 *
-        // **********************************************
-        const MAX_PLAYERS = 100; 
-
-        const MIN_PLAYERS_TO_START = 3; 
-
         function getLobbyDocRef(id) {
             return doc(db, `artifacts/${appId}/public/data/lobbies`, id);
         }
@@ -243,34 +331,133 @@
             // Generate a simple 4-digit ID
             return Math.random().toString(36).substring(2, 6).toUpperCase();
         }
-
-        // --- LOBBY CREATION & JOINING ---
-
-        async function createLobby() {
-            if (!userId) return;
-
-            updateStatus("Creating new lobby...");
-            const newLobbyId = generateLobbyId();
-            const lobbyRef = getLobbyDocRef(newLobbyId);
-
-            const initialLobbyData = {
-                id: newLobbyId,
-                status: 'waiting',
-                players: [{ id: userId, name: `Player_${userId.substring(0, 4)}`, isHost: true }],
-                hostId: userId,
-                maxPlayers: MAX_PLAYERS,
-                createdAt: new Date().toISOString()
-            };
-
-            try {
-                await setDoc(lobbyRef, initialLobbyData);
-                joinLobby(newLobbyId);
-            } catch (error) {
-                updateStatus(`Error creating lobby: ${error.message}`);
-                displayErrorMessage(`Lobby Creation Error: FirebaseError: ${error.message}`);
-                console.error("Lobby Creation Error:", error);
+        
+        function shuffleArray(array) {
+            for (let i = array.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [array[i], array[j]] = [array[j], array[i]];
             }
         }
+
+        // --- GAME START LOGIC ---
+
+        async function startGameLogic(players, lobbyId) {
+            if (!userId || !players.some(p => p.id === userId && p.isHost)) return;
+
+            updateStatus("Starting game and assigning roles...");
+            const lobbyRef = getLobbyDocRef(lobbyId);
+
+            // 1. Assign Roles (1 Imposter, rest Crewmates)
+            const playerIds = players.map(p => p.id);
+            shuffleArray(playerIds);
+
+            const imposterId = playerIds[0];
+            const playerRoles = players.map(player => ({
+                ...player,
+                role: player.id === imposterId ? 'imposter' : 'crewmate',
+                isEliminated: false,
+                hasVoted: false,
+                vote: null,
+                isHost: player.id === lobbyId.hostId // Keep host status for game leader duties
+            }));
+            
+            // 2. Calculate Total Tasks
+            const totalTasks = playerRoles.length * TOTAL_TASKS_PER_PLAYER;
+
+            // 3. Update Firestore
+            const gameData = {
+                status: 'in_game',
+                gameState: 'gameplay', // gameplay, discussion, voting, finished
+                roles: playerRoles,
+                tasksTotal: totalTasks,
+                tasksCompleted: 0,
+                eliminatedCount: 0,
+                voteCount: 0,
+                createdAt: new Date().toISOString() // Update timestamp
+            };
+            
+            try {
+                await updateDoc(lobbyRef, gameData);
+                updateStatus("Game started successfully!");
+            } catch (error) {
+                displayErrorMessage(`Failed to start game: ${error.message}`);
+                console.error("Game Start Error:", error);
+            }
+        }
+        
+        // --- GAME ACTIONS ---
+
+        async function completeTask(lobbyId) {
+            const lobbyRef = getLobbyDocRef(lobbyId);
+            try {
+                const docSnap = await getDoc(lobbyRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    if (data.status === 'in_game' && data.gameState === 'gameplay' && localPlayerRole === 'crewmate') {
+                        const newTasksCompleted = data.tasksCompleted + 1;
+                        await updateDoc(lobbyRef, { tasksCompleted: newTasksCompleted });
+                        updateStatus(`Task completed! ${data.tasksTotal - newTasksCompleted} left.`);
+                    }
+                }
+            } catch (error) {
+                displayErrorMessage(`Task completion error: ${error.message}`);
+            }
+        }
+
+        async function eliminatePlayer(victimId, lobbyId) {
+            const lobbyRef = getLobbyDocRef(lobbyId);
+            try {
+                const docSnap = await getDoc(lobbyRef);
+                if (docSnap.exists()) {
+                    const data = docSnap.data();
+                    if (data.status === 'in_game' && data.gameState === 'gameplay' && localPlayerRole === 'imposter') {
+                        
+                        const updatedRoles = data.roles.map(p => {
+                            if (p.id === victimId) {
+                                return { ...p, isEliminated: true };
+                            }
+                            return p;
+                        });
+
+                        const victim = updatedRoles.find(p => p.id === victimId);
+                        
+                        if (victim && !victim.isEliminated) {
+                            await updateDoc(lobbyRef, {
+                                roles: updatedRoles,
+                                eliminatedCount: data.eliminatedCount + 1,
+                                gameState: 'discussion', // Trigger meeting after kill
+                                meetingReason: `${victim.name} was eliminated!`
+                            });
+                            updateStatus(`You eliminated ${victim.name}. Discussion started.`);
+                        } else {
+                            displayErrorMessage("Player already eliminated or error.");
+                        }
+                    } else {
+                        displayErrorMessage("Only the Imposter can eliminate during gameplay.");
+                    }
+                }
+            } catch (error) {
+                displayErrorMessage(`Elimination error: ${error.message}`);
+            }
+        }
+
+        async function callEmergencyMeeting(lobbyId) {
+            const lobbyRef = getLobbyDocRef(lobbyId);
+            try {
+                const docSnap = await getDoc(lobbyRef);
+                if (docSnap.exists() && docSnap.data().gameState === 'gameplay') {
+                    await updateDoc(lobbyRef, {
+                        gameState: 'discussion',
+                        meetingReason: `${localPlayerRole === 'imposter' ? 'Imposter' : 'Crewmate'} called an Emergency Meeting!`
+                    });
+                    updateStatus("Emergency Meeting called!");
+                }
+            } catch (error) {
+                displayErrorMessage(`Meeting error: ${error.message}`);
+            }
+        }
+
+        // --- LOBBY/GAME FLOW MANAGEMENT ---
 
         async function joinLobby(lobbyId) {
             if (!userId || !lobbyId) return;
@@ -286,13 +473,22 @@
                 }
 
                 const lobbyData = docSnap.data();
-
-                if (lobbyData.status !== 'waiting') {
-                    displayErrorMessage(`Lobby ${lobbyId} has already started.`);
+                
+                // If game is in progress, check if player is joining back
+                if (lobbyData.status === 'in_game') {
+                    const playerEntry = lobbyData.roles.find(p => p.id === userId);
+                    if (playerEntry) {
+                         // Player is rejoining an active game
+                         currentLobbyId = lobbyId;
+                         enterGameView(lobbyId, lobbyData);
+                         return;
+                    }
+                } else if (lobbyData.status !== 'waiting') {
+                    displayErrorMessage(`Lobby ${lobbyId} is in an unknown state: ${lobbyData.status}.`);
                     return;
                 }
                 
-                // Check if lobby is full using the MAX_PLAYERS setting
+                // Check if lobby is full
                 if (lobbyData.players.length >= MAX_PLAYERS) {
                     displayErrorMessage(`Lobby ${lobbyId} is full! Max: ${MAX_PLAYERS}`);
                     return;
@@ -317,26 +513,50 @@
             }
         }
 
-        async function leaveLobby() {
+        async function leaveLobby(isGameQuit = false) {
             if (!currentLobbyId || !userId) return;
 
+            const lobbyRef = getLobbyDocRef(currentLobbyId);
+
             try {
-                const lobbyRef = getLobbyDocRef(currentLobbyId);
                 const docSnap = await getDoc(lobbyRef);
 
                 if (docSnap.exists()) {
                     const lobbyData = docSnap.data();
-                    const updatedPlayers = lobbyData.players.filter(p => p.id !== userId);
-
+                    
+                    // Determine which list to update based on game status
+                    let playersKey = lobbyData.status === 'in_game' ? 'roles' : 'players';
+                    
+                    const updatedPlayers = (lobbyData[playersKey] || []).filter(p => p.id !== userId);
+                    
                     if (updatedPlayers.length > 0) {
                         // Update player list and potentially change host
                         const isHost = lobbyData.hostId === userId;
-                        const newHostId = isHost ? updatedPlayers[0].id : lobbyData.hostId;
+                        
+                        let updateData = {};
+                        if (isHost) {
+                            // Assign new host only if the lobby is still in 'waiting' state
+                            const nextHost = updatedPlayers.find(p => !p.isEliminated) || updatedPlayers[0];
+                            if (nextHost) {
+                                updateData.hostId = nextHost.id;
+                                updateData[playersKey] = updatedPlayers.map(p => ({
+                                    ...p,
+                                    isHost: p.id === nextHost.id
+                                }));
+                            } else {
+                                updateData[playersKey] = updatedPlayers; // No active players left to be host
+                            }
+                        } else {
+                             updateData[playersKey] = updatedPlayers;
+                        }
+                        
+                        await updateDoc(lobbyRef, updateData);
 
-                        await updateDoc(lobbyRef, {
-                            players: updatedPlayers,
-                            hostId: newHostId
-                        });
+                        if (isGameQuit) {
+                            displayErrorMessage(`You left the game. You are now a spectator.`);
+                            // For simplicity, we just delete the player and let the remaining players continue.
+                        }
+
                     } else {
                         // If no players left, delete the lobby
                         await deleteDoc(lobbyRef);
@@ -353,10 +573,11 @@
                 unsubscribeLobby = null;
             }
             currentLobbyId = null;
-            exitLobbyView();
-            updateStatus("Lobby left.");
+            localPlayerRole = null;
+            resetViews();
+            updateStatus("Lobby left. Ready to join or create.");
         }
-
+        
         // --- REAL-TIME LOBBY LISTENER (onSnapshot) ---
         
         function subscribeToLobby(lobbyId) {
@@ -367,11 +588,24 @@
             unsubscribeLobby = onSnapshot(lobbyRef, (docSnap) => {
                 if (docSnap.exists()) {
                     const lobbyData = docSnap.data();
-                    renderLobbyDetails(lobbyData);
+                    
+                    if (lobbyData.status === 'waiting') {
+                        // In Lobby View
+                        enterLobbyView(lobbyId);
+                        renderLobbyDetails(lobbyData);
+                    } else if (lobbyData.status === 'in_game') {
+                        // In Game View
+                        enterGameView(lobbyId, lobbyData);
+                        renderGameView(lobbyData);
+                    } else if (lobbyData.status === 'finished') {
+                        // Game Over View
+                        enterGameOverView(lobbyData);
+                    }
+                    
                 } else {
-                    // Lobby was deleted (e.g., by the host)
+                    // Lobby was deleted 
                     if (currentLobbyId === lobbyId) {
-                        displayErrorMessage("The lobby was closed by the host.");
+                        displayErrorMessage("The lobby was closed by the host or deleted.");
                         leaveLobby(); // Clean up client side state
                     }
                 }
@@ -382,22 +616,47 @@
             });
         }
         
-        // --- UI RENDERING & EVENT HANDLERS ---
+        // --- VIEW TRANSITION FUNCTIONS ---
 
         function enterLobbyView(lobbyId) {
             currentLobbyIdEl.textContent = lobbyId;
-            lobbyViewEl.classList.add('hidden');
+            resetViews();
             gameLobbyViewEl.classList.remove('hidden');
             subscribeToLobby(lobbyId);
             updateStatus(`Joined lobby ${lobbyId}. Waiting for players...`);
         }
         
-        function exitLobbyView() {
-            lobbyViewEl.classList.remove('hidden');
-            gameLobbyViewEl.classList.add('hidden');
-            playersListEl.innerHTML = '';
-            playerCountEl.textContent = '0';
+        function enterGameView(lobbyId, data) {
+            activeLobbyIdEl.textContent = lobbyId;
+            resetViews();
+            
+            if (data.gameState === 'discussion' || data.gameState === 'voting') {
+                votingViewEl.classList.remove('hidden');
+            } else {
+                gameActiveViewEl.classList.remove('hidden');
+            }
         }
+
+        function enterGameOverView(data) {
+            resetViews();
+            gameOverViewEl.classList.remove('hidden');
+            
+            const winner = data.winner === 'crewmate' ? 'CREWMATES WIN!' : 'IMPOSTER WINS!';
+            winMessageEl.textContent = winner;
+            winMessageEl.classList.add(data.winner === 'crewmate' ? 'text-green-500' : 'text-red-500');
+
+            finalRolesListEl.innerHTML = '';
+            (data.roles || []).forEach(p => {
+                 const li = document.createElement('li');
+                 const roleColor = p.role === 'imposter' ? 'text-red-400' : 'text-green-400';
+                 li.className = 'p-2 rounded-md bg-gray-600';
+                 li.innerHTML = `<span class="font-bold">${p.name}</span> was the <span class="${roleColor}">${p.role.toUpperCase()}</span>`;
+                 finalRolesListEl.appendChild(li);
+            });
+            updateStatus("Game over.");
+        }
+
+        // --- RENDER FUNCTIONS ---
 
         function renderLobbyDetails(lobbyData) {
             const players = lobbyData.players || [];
@@ -430,10 +689,206 @@
                 playersListEl.appendChild(li);
             });
         }
+        
+        function renderGameView(data) {
+            const playerEntry = data.roles.find(p => p.id === userId);
+            if (!playerEntry) {
+                // Should not happen if logic is correct, but handles a dropped player
+                return;
+            }
+
+            localPlayerRole = playerEntry.role;
+
+            // 1. Render Role
+            const roleText = localPlayerRole === 'imposter' ? 'IMPOSTER' : 'CREWMATE';
+            const roleClass = localPlayerRole === 'imposter' ? 'imposter-role' : 'crewmate-role';
+            roleDisplayEl.className = `text-center p-4 rounded-xl font-bold text-xl transition-all duration-500 ${roleClass}`;
+            roleDisplayEl.textContent = roleText;
+
+            // 2. Render Game Info
+            const activePlayers = data.roles.filter(p => !p.isEliminated);
+            const imposterCount = activePlayers.filter(p => p.role === 'imposter').length;
+            const crewmateCount = activePlayers.filter(p => p.role === 'crewmate').length;
+
+            gameStatusLabelEl.textContent = data.gameState.toUpperCase();
+            tasksCompletedEl.textContent = data.tasksCompleted;
+            tasksTotalEl.textContent = data.tasksTotal;
+            imposterCountEl.textContent = imposterCount;
+            crewmateCountEl.textContent = crewmateCount;
+            
+            // 3. Check for Win Condition
+            if (imposterCount === 0) {
+                endGame(data.id, 'crewmate', data.roles);
+                return;
+            }
+            if (imposterCount >= crewmateCount || data.tasksCompleted >= data.tasksTotal) {
+                // Imposters equal or outnumber crewmates, or tasks complete
+                const winner = data.tasksCompleted >= data.tasksTotal ? 'crewmate' : 'imposter';
+                endGame(data.id, winner, data.roles);
+                return;
+            }
+
+
+            // 4. Render Active Player List and Actions
+            activePlayersListEl.innerHTML = '';
+            actionAreaEl.innerHTML = ''; 
+
+            if (data.gameState === 'gameplay') {
+                // Actions available during gameplay
+                if (localPlayerRole === 'crewmate') {
+                    const completeTaskBtn = document.createElement('button');
+                    completeTaskBtn.className = 'w-full btn-secondary btn rounded-lg';
+                    completeTaskBtn.textContent = 'Complete Random Task';
+                    completeTaskBtn.addEventListener('click', () => completeTask(data.id));
+                    actionAreaEl.appendChild(completeTaskBtn);
+
+                    const callMeetingBtn = document.createElement('button');
+                    callMeetingBtn.className = 'w-full btn-primary btn rounded-lg bg-yellow-500 hover:bg-yellow-400';
+                    callMeetingBtn.textContent = 'Call Emergency Meeting';
+                    callMeetingBtn.addEventListener('click', () => callEmergencyMeeting(data.id));
+                    actionAreaEl.appendChild(callMeetingBtn);
+
+
+                } else if (localPlayerRole === 'imposter') {
+                    const imposterText = document.createElement('p');
+                    imposterText.className = 'text-center text-red-300 font-semibold';
+                    imposterText.textContent = 'Select a player to eliminate:';
+                    actionAreaEl.appendChild(imposterText);
+                }
+
+                // Render players for elimination (Imposter only)
+                data.roles.forEach(player => {
+                    const li = document.createElement('li');
+                    li.className = 'p-2 rounded-md bg-gray-600 flex justify-between items-center';
+                    
+                    let name = player.name;
+                    if (player.id === userId) {
+                        name += " (You)";
+                    }
+                    if (player.isEliminated) {
+                         name = `<span class="eliminated-player">${name} (Eliminated)</span>`;
+                    }
+                    
+                    li.innerHTML = name;
+
+                    if (!player.isEliminated && player.id !== userId && localPlayerRole === 'imposter' && data.gameState === 'gameplay') {
+                        const killBtn = document.createElement('button');
+                        killBtn.className = 'bg-red-500 hover:bg-red-400 text-white text-sm py-1 px-3 rounded-md';
+                        killBtn.textContent = 'Eliminate';
+                        killBtn.addEventListener('click', () => eliminatePlayer(player.id, data.id));
+                        li.appendChild(killBtn);
+                    }
+                    activePlayersListEl.appendChild(li);
+                });
+
+            } else if (data.gameState === 'discussion' || data.gameState === 'voting') {
+                 // Transition to Voting View
+                 renderVotingView(data);
+            }
+        }
+        
+        function renderVotingView(data) {
+            meetingReasonEl.textContent = data.meetingReason || 'Discussion started.';
+            votingListEl.innerHTML = '';
+            actionAreaEl.innerHTML = '';
+            
+            const localPlayer = data.roles.find(p => p.id === userId);
+            
+            if (localPlayer.isEliminated) {
+                // Spectator view
+                votingListEl.innerHTML = '<li class="text-center p-4 text-yellow-400">You are eliminated and cannot vote.</li>';
+                skipVoteBtn.classList.add('hidden');
+                return;
+            }
+
+            skipVoteBtn.classList.remove('hidden');
+
+            // 5. Render Voting List
+            const playersToVote = data.roles.filter(p => !p.isEliminated);
+
+            playersToVote.forEach(player => {
+                const li = document.createElement('li');
+                li.className = 'p-2 rounded-md bg-gray-600 flex justify-between items-center';
+                li.textContent = player.name;
+
+                if (player.id !== userId) {
+                    const voteBtn = document.createElement('button');
+                    voteBtn.className = 'bg-blue-500 hover:bg-blue-400 text-white text-sm py-2 px-4 rounded-md';
+                    voteBtn.textContent = `Vote`;
+                    voteBtn.addEventListener('click', () => submitVote(player.id, data.id));
+                    li.appendChild(voteBtn);
+                } else {
+                    li.textContent += ' (You)';
+                }
+                
+                votingListEl.appendChild(li);
+            });
+        }
+        
+        async function submitVote(votedPlayerId, lobbyId) {
+            const lobbyRef = getLobbyDocRef(lobbyId);
+            try {
+                const docSnap = await getDoc(lobbyRef);
+                const data = docSnap.data();
+
+                const updatedRoles = data.roles.map(p => {
+                    if (p.id === userId) {
+                        return { ...p, hasVoted: true, vote: votedPlayerId };
+                    }
+                    return p;
+                });
+                
+                await updateDoc(lobbyRef, {
+                    roles: updatedRoles,
+                    voteCount: data.voteCount + 1
+                });
+                updateStatus(`Voted for ${votedPlayerId.substring(0, 4)}. Waiting for others.`);
+                
+            } catch (error) {
+                displayErrorMessage(`Voting error: ${error.message}`);
+            }
+        }
+        
+        async function endGame(lobbyId, winner, roles) {
+            const lobbyRef = getLobbyDocRef(lobbyId);
+            try {
+                // Update final state in Firestore (Host only for efficiency)
+                if (roles.find(p => p.id === userId)?.isHost) {
+                     await updateDoc(lobbyRef, {
+                        status: 'finished',
+                        gameState: 'finished',
+                        winner: winner,
+                        roles: roles // Ensure final roles are saved
+                    });
+                }
+            } catch (error) {
+                console.error("End Game error:", error);
+            }
+        }
+
 
         // --- EVENT LISTENERS ---
 
-        document.getElementById('create-lobby-btn').addEventListener('click', createLobby);
+        document.getElementById('create-lobby-btn').addEventListener('click', () => {
+             // Re-using the existing createLobby for the initial structure
+             if (userId) {
+                 const newLobbyId = generateLobbyId();
+                 const lobbyRef = getLobbyDocRef(newLobbyId);
+                 
+                 const initialLobbyData = {
+                    id: newLobbyId,
+                    status: 'waiting',
+                    players: [{ id: userId, name: `Player_${userId.substring(0, 4)}`, isHost: true }],
+                    hostId: userId,
+                    maxPlayers: MAX_PLAYERS,
+                    createdAt: new Date().toISOString()
+                };
+
+                setDoc(lobbyRef, initialLobbyData)
+                    .then(() => joinLobby(newLobbyId))
+                    .catch(error => displayErrorMessage(`Lobby Creation Error: ${error.message}`));
+             }
+        });
         
         document.getElementById('join-lobby-btn').addEventListener('click', () => {
             const lobbyId = document.getElementById('join-lobby-id').value.trim().toUpperCase();
@@ -444,13 +899,45 @@
             }
         });
         
-        leaveLobbyBtn.addEventListener('click', leaveLobby);
+        leaveLobbyBtn.addEventListener('click', () => leaveLobby(false));
         
-        startGameBtn.addEventListener('click', () => {
-             // In a real game, this would update the Firestore status to 'started' 
-             // and transition all clients to the game screen.
-             displayErrorMessage("Game started! (Feature not fully implemented)");
-             console.log("Game Start Triggered for Lobby:", currentLobbyId);
+        leaveGameBtn.addEventListener('click', () => leaveLobby(true)); // New button for quitting active game
+
+        document.getElementById('return-to-lobby-btn').addEventListener('click', () => {
+            // This button is only visible in the 'finished' state.
+            // Reset the lobby status back to 'waiting' and clear game data.
+            const lobbyRef = getLobbyDocRef(currentLobbyId);
+            if (currentLobbyId && lobbyRef) {
+                // The host must be the one to reset the game.
+                const isHost = true; // Simplified for now, but should check if current user is host
+                if (isHost) {
+                    updateDoc(lobbyRef, {
+                        status: 'waiting',
+                        gameState: 'waiting',
+                        roles: null,
+                        tasksTotal: 0,
+                        tasksCompleted: 0,
+                        eliminatedCount: 0,
+                        voteCount: 0,
+                        winner: null,
+                        players: [] // Reset players for clean start
+                    }).then(() => {
+                        leaveLobby(false); // Go back to main menu
+                    }).catch(error => displayErrorMessage(`Error resetting game: ${error.message}`));
+                } else {
+                     leaveLobby(false); // Non-host just leaves
+                }
+            }
+        });
+        
+        startGameBtn.addEventListener('click', async () => {
+            if (!currentLobbyId) return;
+
+            const docSnap = await getDoc(getLobbyDocRef(currentLobbyId));
+            if (docSnap.exists()) {
+                const players = docSnap.data().players;
+                startGameLogic(players, currentLobbyId);
+            }
         });
 
 
