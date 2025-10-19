@@ -1,0 +1,925 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Imposter</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #0d1117;
+            color: #c9d1d9;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            margin: 0;
+            padding: 1rem;
+        }
+        .container {
+            width: 100%;
+            max-width: 600px;
+            background-color: #161b22;
+            border: 1px solid #30363d;
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
+        }
+        .btn {
+            padding: 0.75rem 1.5rem;
+            border-radius: 8px;
+            font-weight: 600;
+            transition: background-color 0.2s, transform 0.1s;
+        }
+        .btn-primary {
+            background-color: #238636;
+            color: white;
+        }
+        .btn-primary:hover {
+            background-color: #2ea043;
+            transform: translateY(-1px);
+        }
+        .btn-danger {
+            background-color: #a02e43;
+            color: white;
+        }
+        .btn-danger:hover {
+            background-color: #c93b58;
+            transform: translateY(-1px);
+        }
+        .status-box {
+            min-height: 40px;
+            padding: 0.75rem;
+            border-radius: 6px;
+        }
+        .btn-vote {
+            padding: 0.75rem;
+            border-radius: 8px;
+            font-weight: 600;
+            background-color: #30363d;
+            color: #c9d1d9;
+            transition: background-color 0.1s;
+            position: relative; /* For vote count positioning */
+        }
+        .btn-vote:hover {
+            background-color: #444c56;
+        }
+        .voted {
+             background-color: #3b82f6 !important; /* Blue for voted */
+             color: white;
+        }
+        .vote-count {
+            position: absolute;
+            top: 4px;
+            right: 4px;
+            background-color: #0d1117;
+            border-radius: 9999px;
+            padding: 2px 8px;
+            font-size: 0.75rem;
+            font-weight: bold;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="text-3xl font-bold mb-4 text-center text-red-400">IMPOSTER</h1>
+        <p id="userIdDisplay" class="text-xs text-gray-500 mb-6 text-center break-all">User ID: Loading...</p>
+
+        <!-- Status Message Box -->
+        <div id="statusMessage" class="status-box bg-gray-700 mb-6 text-center">Initializing...</div>
+
+        <!-- LOBBY SCREEN -->
+        <div id="lobbyScreen" class="space-y-4">
+            <h2 class="text-xl font-semibold">Lobby ID: <span id="lobbyId" class="text-yellow-400">Waiting...</span></h2>
+            
+            <div class="flex space-x-2">
+                <input type="text" id="joinInput" placeholder="Enter Lobby ID" 
+                       class="flex-grow bg-gray-800 border border-gray-600 rounded-lg p-2 text-white">
+                <button id="joinLobbyBtn" class="btn btn-primary">Join</button>
+            </div>
+            
+            <button id="createLobbyBtn" class="btn btn-primary w-full">Create New Lobby</button>
+            
+            <h3 class="mt-8 font-bold text-lg">Players in Lobby:</h3>
+            <ul id="playerList" class="space-y-2 list-disc list-inside">
+                <!-- Players will be listed here -->
+            </ul>
+
+            <!-- START BUTTON (Visible only to Host) -->
+            <button id="startGameBtn" class="btn btn-danger w-full mt-4 hidden">START GAME</button>
+        </div>
+
+        <!-- GAME SCREEN (Hidden initially) -->
+        <div id="gameScreen" class="space-y-6 text-center hidden">
+            <!-- Role Display -->
+            <div id="roleDisplayContainer">
+                <h2 id="roleTitle" class="text-4xl font-extrabold text-white"></h2>
+                <p class="text-lg text-gray-400">Your secret word is:</p>
+                <p id="gameWord" class="text-6xl font-black text-yellow-500 bg-gray-800 p-4 rounded-xl shadow-lg"></p>
+            </div>
+
+            <!-- Timer & Status -->
+            <div id="gameStatus" class="mt-8">
+                <h3 id="roundCounter" class="text-xl font-semibold text-gray-300"></h3>
+                <p id="timerDisplay" class="text-5xl font-extrabold text-red-500 mt-2"></p>
+            </div>
+
+            <!-- Voting Section -->
+            <div id="votingContainer" class="mt-6 space-y-4 hidden">
+                <h4 id="votingPrompt" class="text-xl font-bold text-yellow-400"></h4>
+                <div id="voteButtons" class="grid grid-cols-2 gap-3">
+                    <!-- Voting buttons will be injected here -->
+                </div>
+                <button id="skipVoteBtn" class="btn bg-gray-600 hover:bg-gray-700 w-full text-white">SKIP VOTE</button>
+                <p id="myVoteStatus" class="text-sm text-gray-400"></p>
+                
+            </div>
+            
+            <!-- End Round/Game Controls (Host-only or All) -->
+            <div class="mt-8">
+                <button id="leaveGameBtn" class="btn btn-primary w-full">LEAVE GAME</button>
+                <button id="resetGameBtn" class="btn btn-danger w-full mt-4 hidden">END ROUND & RESET LOBBY</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Firebase SDKs -->
+    <script type="module">
+        // Import necessary Firebase modules
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
+        import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
+        import { getFirestore, doc, setDoc, onSnapshot, collection, updateDoc, getDoc, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-lite.js";
+
+        // ===============================================================
+        // --- GUARDED CONFIGURATION AND AUTH SETUP ---
+        
+        // 1. Initialize variables from environment or use placeholders
+        let firebaseConfig;
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'imposter-default-app';
+        let initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
+        
+        // 2. Safely parse the environment configuration
+        try {
+            const globalConfigString = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
+            firebaseConfig = JSON.parse(globalConfigString);
+            
+            // Validate that the parsed config has a project ID (minimal check)
+            if (!firebaseConfig || !firebaseConfig.projectId) {
+                throw new Error("Parsed config is invalid or empty.");
+            }
+
+        } catch (e) {
+            // 3. Fallback to a hardcoded config that supports anonymous sign-in
+            console.warn("System config failed to load/parse. Using minimal fallback config.", e);
+            
+            // FIX: Use a configuration that is less likely to trigger (auth/configuration-not-found)
+            // by using the appId as the project identifier in multiple places.
+            firebaseConfig = {
+                apiKey: `AIzaSy${appId.substring(0, 10)}X1-fallback-key`, // Unique-ish placeholder key
+                authDomain: `${appId}.firebaseapp.com`,
+                projectId: appId,
+                storageBucket: `${appId}.appspot.com`,
+            };
+            initialAuthToken = null; // Cannot use custom token with a fallback config
+        }
+        // ===============================================================
+
+        // Debug logging for Firebase operations
+        setLogLevel('debug'); 
+        
+        // Game Constants
+        const WORDS = ["Coffee", "Pizza", "Ocean", "Airplane", "Soccer", "Mountain", "Library", "Pencil", "Rainbow", "Cloud", "Sun", "Moon", "Star", "Book", "Chair", "Table", "Phone", "Car", "Bus", "Train"];
+        const MAX_ROUNDS = 4;
+        const ROUND_DURATION_SECONDS = 120; // 2 minutes
+        const INTERMISSION_SECONDS = 5; // 5 seconds intermission
+        
+        // Firebase Variables
+        let app;
+        let db;
+        let auth;
+        let currentUserId = null;
+        let currentLobbyId = null;
+        let currentLobbyDocId = null;
+        let currentLobbyUnsubscribe = null; // To stop the real-time listener
+
+        // Game State Variables
+        let roundTimerInterval = null; // To hold the interval ID for the countdown
+        let isHost = false; // Track host status
+        let lobbyDataCache = null; // Cache of the latest lobby data
+
+        // DOM Elements
+        const statusMessageEl = document.getElementById('statusMessage');
+        const userIdDisplayEl = document.getElementById('userIdDisplay');
+        const lobbyIdEl = document.getElementById('lobbyId');
+        const playerListEl = document.getElementById('playerList');
+        const createLobbyBtn = document.getElementById('createLobbyBtn');
+        const joinLobbyBtn = document.getElementById('joinLobbyBtn');
+        const joinInput = document.getElementById('joinInput');
+        const startGameBtn = document.getElementById('startGameBtn');
+        const leaveGameBtn = document.getElementById('leaveGameBtn');
+        const resetGameBtn = document.getElementById('resetGameBtn');
+        const lobbyScreenEl = document.getElementById('lobbyScreen');
+        const gameScreenEl = document.getElementById('gameScreen');
+        const roleTitleEl = document.getElementById('roleTitle');
+        const gameWordEl = document.getElementById('gameWord');
+        const roundCounterEl = document.getElementById('roundCounter');
+        const timerDisplayEl = document.getElementById('timerDisplay');
+        const votingPromptEl = document.getElementById('votingPrompt');
+        const voteButtonsEl = document.getElementById('voteButtons');
+        const skipVoteBtn = document.getElementById('skipVoteBtn');
+        const myVoteStatusEl = document.getElementById('myVoteStatus');
+        const roleDisplayContainerEl = document.getElementById('roleDisplayContainer');
+        const votingContainerEl = document.getElementById('votingContainer');
+
+
+        const BASE_LOBBY_PATH = `/artifacts/${appId}/public/data/lobbies`;
+
+        // Utility function to display messages
+        function showStatus(message, isError = false) {
+            statusMessageEl.textContent = message;
+            statusMessageEl.className = `status-box mb-6 text-center font-medium ${isError ? 'bg-red-900 text-red-300' : 'bg-green-900 text-green-300'}`;
+            console.log(`STATUS: ${message}`);
+        }
+        
+        // Screen Management
+        function showLobbyScreen() {
+            gameScreenEl.classList.add('hidden');
+            lobbyScreenEl.classList.remove('hidden');
+            clearInterval(roundTimerInterval);
+            roundTimerInterval = null;
+        }
+
+        function showGameScreen() {
+            lobbyScreenEl.classList.add('hidden');
+            gameScreenEl.classList.remove('hidden');
+        }
+
+        function formatTime(seconds) {
+            const minutes = Math.floor(seconds / 60);
+            const remainderSeconds = seconds % 60;
+            return `${minutes}:${remainderSeconds < 10 ? '0' : ''}${remainderSeconds}`;
+        }
+        
+        // 1. INITIALIZE FIREBASE AND AUTHENTICATION
+        async function initializeFirebase() {
+            try {
+                // Initialize Firebase with the determined configuration
+                app = initializeApp(firebaseConfig);
+                db = getFirestore(app);
+                auth = getAuth(app);
+                
+                showStatus('Firebase initialized. Authenticating...');
+
+                // Try to sign in with the system-provided custom token
+                if (initialAuthToken) {
+                    try {
+                        await signInWithCustomToken(auth, initialAuthToken);
+                        showStatus('Signed in using Custom Token.');
+                    } catch (e) {
+                        console.warn("Custom token sign-in failed, falling back to Anonymous.", e);
+                        // Fallback: If custom token fails (e.g., token expired or invalid), sign in anonymously
+                        await signInAnonymously(auth); 
+                        showStatus('Signed in anonymously (Token fallback). Ready to play.');
+                    }
+                } else {
+                    // Fallback: If no token was provided (e.g., in safe mode), sign in anonymously
+                    await signInAnonymously(auth); 
+                    showStatus('Signed in anonymously (No token provided). Ready to play.');
+                }
+                
+                onAuthStateChanged(auth, (user) => {
+                    if (user) {
+                        currentUserId = user.uid;
+                        userIdDisplayEl.textContent = `User ID: ${currentUserId}`;
+                        window.addEventListener('beforeunload', () => removeUserFromLobby(currentLobbyId, currentUserId));
+                    } else {
+                        currentUserId = null;
+                        userIdDisplayEl.textContent = `User ID: Not Signed In`;
+                        showStatus('Authentication failed. Please refresh or check connection.', true);
+                    }
+                });
+            } catch (error) {
+                // This will catch the final, critical failure point like (auth/configuration-not-found)
+                showStatus(`Firebase Init Error: ${error.message}. Critical failure.`, true);
+                console.error("Firebase Initialization Failed:", error);
+            }
+        }
+        
+        // 2. LOBBY CREATION
+        createLobbyBtn.addEventListener('click', async () => {
+            if (!currentUserId) return showStatus('Please wait for sign-in...', true);
+            try {
+                showStatus('Creating new lobby...');
+                const lobbyRef = collection(db, BASE_LOBBY_PATH);
+                const docRef = doc(lobbyRef); // Get a new document reference with an auto-generated ID first
+                
+                // Use the full doc ID to generate a short, 6-character Lobby ID
+                const newLobbyId = docRef.id.substring(0, 6).toUpperCase(); 
+
+                await setDoc(docRef, {
+                    lobbyId: newLobbyId,
+                    createdAt: Date.now(),
+                    status: 'waiting',
+                    ownerId: currentUserId,
+                    players: { [currentUserId]: 'Host' }, // Initial Host player object
+                    gameWord: '',
+                    roles: {},
+                    currentRound: 0,
+                    roundEndTime: 0,
+                    votes: {},
+                    outcome: null 
+                });
+                
+                enterLobby(newLobbyId, docRef.id);
+
+            } catch (error) {
+                showStatus(`Error creating lobby: ${error.message}`, true);
+                console.error("Lobby Creation Error:", error);
+            }
+        });
+        
+        // 3. LOBBY JOINING
+        joinLobbyBtn.addEventListener('click', () => {
+            const id = joinInput.value.trim().toUpperCase();
+            if (id.length === 6) {
+                findLobbyByShortId(id);
+            } else {
+                showStatus('Lobby ID must be 6 characters.', true);
+            }
+        });
+
+        async function findLobbyByShortId(shortId) {
+             if (!currentUserId) return showStatus('Please wait for sign-in...', true);
+            showStatus(`Searching for lobby ${shortId}...`);
+            try {
+                const q = collection(db, BASE_LOBBY_PATH);
+                const querySnapshot = await getDocs(q); 
+                let foundDocId = null;
+                let actualDocRef;
+
+                querySnapshot.forEach(doc => {
+                    if (doc.data().lobbyId === shortId) {
+                        foundDocId = doc.id;
+                        actualDocRef = doc.ref;
+                    }
+                });
+
+                if (foundDocId) {
+                    const lobbyData = (await getDoc(actualDocRef)).data();
+                    const players = lobbyData.players || {};
+
+                    if (lobbyData.status !== 'waiting' && !players[currentUserId]) {
+                        showStatus('Game is already in progress.', true);
+                        return;
+                    }
+
+                    if (!players[currentUserId]) {
+                        const playerCount = Object.keys(players).length;
+                        players[currentUserId] = `Player ${playerCount + 1}`;
+                        await updateDoc(actualDocRef, { players: players });
+                    }
+                    
+                    enterLobby(shortId, foundDocId);
+                } else {
+                    showStatus(`Lobby ${shortId} not found.`, true);
+                }
+            } catch (error) {
+                showStatus(`Error joining lobby: ${error.message}`, true);
+                console.error("Join Lobby Error:", error);
+            }
+        }
+        
+        // 4. LOBBY MANAGEMENT (Real-time listener)
+        function enterLobby(shortId, fullDocId) {
+            currentLobbyId = shortId;
+            currentLobbyDocId = fullDocId;
+            lobbyIdEl.textContent = shortId;
+            joinInput.value = shortId;
+            showStatus(`Joined Lobby ${shortId}!`);
+            showLobbyScreen();
+
+            const lobbyDocRef = doc(db, BASE_LOBBY_PATH, fullDocId);
+
+            if (currentLobbyUnsubscribe) currentLobbyUnsubscribe();
+
+            currentLobbyUnsubscribe = onSnapshot(lobbyDocRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const lobbyData = docSnap.data();
+                    isHost = lobbyData.ownerId === currentUserId;
+                    lobbyDataCache = lobbyData;
+                    handleLobbyUpdate(lobbyData);
+                } else {
+                    handleLobbyDeletion();
+                }
+            }, (error) => {
+                showStatus(`Lobby listener error: ${error.message}`, true);
+                console.error("Snapshot Error:", error);
+            });
+        }
+        
+        function handleLobbyUpdate(lobbyData) {
+            updatePlayerList(lobbyData.players, lobbyData.ownerId);
+            resetGameBtn.classList.add('hidden'); 
+
+            if (lobbyData.status === 'waiting') {
+                handleWaitingState(lobbyData);
+            } else if (lobbyData.status === 'discussion' || lobbyData.status === 'intermission' || lobbyData.status === 'voting') {
+                handleGameState(lobbyData);
+            } else if (lobbyData.status === 'finished') {
+                handleFinishedState(lobbyData);
+            }
+        }
+        
+        function handleWaitingState(lobbyData) {
+            showLobbyScreen();
+            
+            if (isHost) {
+                startGameBtn.classList.remove('hidden');
+                const playerCount = Object.keys(lobbyData.players).length;
+                startGameBtn.disabled = playerCount < 3;
+                startGameBtn.textContent = playerCount < 3 ? `Need ${3 - playerCount} more players` : 'START GAME';
+            } else {
+                startGameBtn.classList.add('hidden');
+            }
+        }
+
+        function handleGameState(lobbyData) {
+            showGameScreen();
+            displayRoleScreen(lobbyData.roles[currentUserId], lobbyData.gameWord);
+            
+            // Start the client-side timer refresh and host-side logic
+            if (roundTimerInterval) clearInterval(roundTimerInterval);
+            roundTimerInterval = setInterval(() => {
+                updateTimerDisplay(lobbyData);
+            }, 1000);
+            
+            // Display the correct UI container based on state
+            if (lobbyData.status === 'discussion') {
+                showDiscussionUI(lobbyData);
+            } else if (lobbyData.status === 'intermission') {
+                showIntermissionUI(lobbyData);
+            } else if (lobbyData.status === 'voting') {
+                showVotingUI(lobbyData);
+            }
+
+            if (isHost) {
+                resetGameBtn.classList.remove('hidden'); // Host can reset the whole game
+            }
+        }
+
+        function handleFinishedState(lobbyData) {
+            showGameScreen();
+            clearInterval(roundTimerInterval);
+            roundTimerInterval = null;
+            
+            roleTitleEl.textContent = 'GAME OVER';
+            roleTitleEl.className = 'text-5xl font-extrabold text-red-700';
+            roleDisplayContainerEl.classList.remove('hidden');
+            votingContainerEl.classList.add('hidden');
+            timerDisplayEl.classList.add('hidden');
+
+            // Find the Imposter's name
+            const imposterId = Object.keys(lobbyData.roles).find(id => lobbyData.roles[id] === 'IMPOSTER');
+            const imposterName = lobbyData.players[imposterId] || 'Unknown Player';
+
+            if (lobbyData.outcome === 'citizen_win') {
+                gameWordEl.textContent = `CITIZENS WIN! Imposter was: ${imposterName}. Word: ${lobbyData.gameWord}`;
+                gameWordEl.className = 'text-2xl font-black text-green-500 bg-gray-800 p-4 rounded-xl shadow-lg';
+                showStatus(`Game Over: Citizens won!`, false);
+            } else { // imposter_win (all rounds exhausted)
+                gameWordEl.textContent = `IMPOSTER WINS! The Imposter was ${imposterName}. Word: ${lobbyData.gameWord}`;
+                gameWordEl.className = 'text-2xl font-black text-red-500 bg-gray-800 p-4 rounded-xl shadow-lg';
+                showStatus(`Game Over: The Imposter escaped!`, true);
+            }
+        }
+
+        // --- TIMER AND STATE TRANSITION LOGIC (HOST ONLY) ---
+        async function startHostTimerLogic(lobbyData) {
+            if (!isHost) return;
+            const now = Date.now();
+            const timeRemaining = Math.max(0, lobbyData.roundEndTime - now);
+            const lobbyDocRef = doc(db, BASE_LOBBY_PATH, currentLobbyDocId);
+            
+            // If time is up, trigger state change
+            if (timeRemaining <= 0) {
+                let newStatus;
+                let newRound = lobbyData.currentRound;
+                let newEndTime;
+
+                if (lobbyData.status === 'discussion') {
+                    // Discussion ends (120s) -> Go to Voting
+                    newStatus = 'voting';
+                    // Voting phase is not strictly timed in Firestore, but we set a long end time
+                    newEndTime = now + (ROUND_DURATION_SECONDS * 1000); 
+                    await updateDoc(lobbyDocRef, { status: newStatus, roundEndTime: newEndTime, votes: {} });
+
+                } else if (lobbyData.status === 'voting') {
+                    // Voting ends -> Go to Intermission
+                    const outcome = calculateVotes(lobbyData.votes, lobbyData.roles);
+                    if (outcome) {
+                         // Win condition met, jump to finished state
+                         newEndTime = now + (INTERMISSION_SECONDS * 1000); // Wait 5 seconds before showing final screen
+                         await updateDoc(lobbyDocRef, { status: 'finished', outcome: outcome, roundEndTime: newEndTime });
+                         return;
+                    }
+                    
+                    // No win/loss, proceed to intermission
+                    newStatus = 'intermission';
+                    newEndTime = now + (INTERMISSION_SECONDS * 1000);
+                    await updateDoc(lobbyDocRef, { status: newStatus, roundEndTime: newEndTime });
+
+                } else if (lobbyData.status === 'intermission') {
+                    // Intermission ends (5s) -> Go to next Discussion round or End Game
+                    newRound++;
+                    if (newRound > MAX_ROUNDS) {
+                        // Max rounds reached, Imposter wins
+                        await updateDoc(lobbyDocRef, { status: 'finished', outcome: 'imposter_win', roundEndTime: 0 });
+                        return;
+                    }
+                    
+                    // Start next discussion round
+                    newStatus = 'discussion';
+                    newEndTime = now + (ROUND_DURATION_SECONDS * 1000);
+                    await updateDoc(lobbyDocRef, { status: newStatus, currentRound: newRound, roundEndTime: newEndTime, votes: {} });
+                }
+            }
+        }
+        
+        function updateTimerDisplay(lobbyData) {
+            const now = Date.now();
+            const timeRemainingMs = Math.max(0, lobbyData.roundEndTime - now);
+            const timeRemainingSec = Math.ceil(timeRemainingMs / 1000);
+            
+            // Update display
+            timerDisplayEl.textContent = formatTime(timeRemainingSec);
+            
+            // Host logic needs to run constantly during game phases
+            if (isHost && (lobbyData.status === 'discussion' || lobbyData.status === 'intermission' || lobbyData.status === 'voting')) {
+                startHostTimerLogic(lobbyData);
+            }
+        }
+
+        // 5. START GAME LOGIC (HOST ONLY)
+        startGameBtn.addEventListener('click', async () => {
+            if (!currentUserId || !currentLobbyDocId) return;
+            showStatus('Starting game and assigning roles...');
+            
+            try {
+                const lobbyDocRef = doc(db, BASE_LOBBY_PATH, currentLobbyDocId);
+                const docSnap = await getDoc(lobbyDocRef);
+                const lobbyData = docSnap.data();
+                
+                const playerIds = Object.keys(lobbyData.players);
+                
+                if (playerIds.length < 3) return showStatus('Need at least 3 players to start.', true);
+                
+                // 1. Assign Roles
+                const imposterId = playerIds[Math.floor(Math.random() * playerIds.length)];
+                const roles = {};
+                playerIds.forEach(id => {
+                    roles[id] = id === imposterId ? 'IMPOSTER' : 'CITIZEN';
+                });
+
+                // 2. Assign Word
+                const gameWord = WORDS[Math.floor(Math.random() * WORDS.length)];
+
+                // 3. Update Firebase (This triggers the game on all phones)
+                await updateDoc(lobbyDocRef, {
+                    status: 'discussion',
+                    gameWord: gameWord,
+                    roles: roles,
+                    currentRound: 1,
+                    roundEndTime: Date.now() + (ROUND_DURATION_SECONDS * 1000),
+                    outcome: null,
+                    votes: {}
+                });
+            } catch (error) {
+                showStatus(`Error starting game: ${error.message}`, true);
+                console.error("Start Game Error:", error);
+            }
+        });
+
+        // --- UI STATE HANDLERS ---
+        function showDiscussionUI(lobbyData) {
+            roleDisplayContainerEl.classList.remove('hidden');
+            votingContainerEl.classList.add('hidden');
+            timerDisplayEl.classList.remove('hidden');
+            timerDisplayEl.classList.remove('text-yellow-500');
+            timerDisplayEl.classList.add('text-red-500');
+            roundCounterEl.textContent = `Round ${lobbyData.currentRound} / ${MAX_ROUNDS}`;
+            showStatus(`Round ${lobbyData.currentRound} Discussion is live.`, false);
+        }
+
+        function showIntermissionUI(lobbyData) {
+            roleDisplayContainerEl.classList.remove('hidden');
+            votingContainerEl.classList.add('hidden');
+            timerDisplayEl.classList.remove('hidden');
+            timerDisplayEl.classList.remove('text-red-500');
+            timerDisplayEl.classList.add('text-yellow-500');
+            roundCounterEl.textContent = `Next round starts in:`;
+            showStatus(`Voting complete! Next round starting in 5 seconds.`, false);
+        }
+
+        function showVotingUI(lobbyData) {
+            roleDisplayContainerEl.classList.remove('hidden');
+            votingContainerEl.classList.remove('hidden');
+            timerDisplayEl.classList.add('hidden'); // Timer is hidden during the voting period for focus
+            
+            votingPromptEl.textContent = "Vote for the Imposter:";
+            renderVotingUI(lobbyData.players, lobbyData.votes);
+            
+            const userVoted = lobbyData.votes[currentUserId] !== undefined;
+            skipVoteBtn.disabled = userVoted;
+            
+            if (userVoted) {
+                 myVoteStatusEl.textContent = "Your vote has been cast. Waiting for others...";
+            } else {
+                 myVoteStatusEl.textContent = "Cast your vote or skip.";
+            }
+
+            showStatus("Time to vote!", false);
+        }
+
+        // 6. DISPLAY ROLE SCREEN 
+        function displayRoleScreen(role, word) {
+            if (!role) {
+                roleTitleEl.textContent = 'Waiting for Round 1...';
+                gameWordEl.textContent = '...';
+                return;
+            }
+            
+            // Host is a regular player, so role is checked for everyone
+            if (role === 'IMPOSTER') {
+                roleTitleEl.textContent = 'IMPOSTER';
+                roleTitleEl.className = 'text-4xl font-extrabold text-red-500';
+                gameWordEl.textContent = '???';
+                gameWordEl.className = 'text-6xl font-black text-gray-500 bg-gray-800 p-4 rounded-xl shadow-lg';
+            } else { // CITIZEN (or Host is Citizen)
+                roleTitleEl.textContent = 'CITIZEN';
+                roleTitleEl.className = 'text-4xl font-extrabold text-green-500';
+                gameWordEl.textContent = word;
+                gameWordEl.className = 'text-6xl font-black text-yellow-500 bg-gray-800 p-4 rounded-xl shadow-lg';
+            }
+        }
+        
+        // --- VOTING LOGIC ---
+
+        function renderVotingUI(players, currentVotes) {
+            voteButtonsEl.innerHTML = '';
+            
+            const playerIds = Object.keys(players);
+            
+            // Count total votes for each player
+            const voteCounts = {};
+            Object.values(currentVotes).forEach(votedId => {
+                voteCounts[votedId] = (voteCounts[votedId] || 0) + 1;
+            });
+
+            playerIds.forEach(playerId => {
+                const name = players[playerId];
+                const isYou = playerId === currentUserId;
+                
+                const btn = document.createElement('button');
+                btn.className = 'btn-vote relative';
+                btn.textContent = name + (isYou ? ' (You)' : '');
+                btn.dataset.playerId = playerId;
+                
+                // Disable vote for self or if vote already cast
+                btn.disabled = isYou || currentVotes[currentUserId] !== undefined;
+
+                // Highlight if this button is the player's vote
+                if (currentVotes[currentUserId] === playerId) {
+                    btn.classList.add('voted');
+                }
+                
+                // Display vote count only during voting
+                if (voteCounts[playerId] > 0) {
+                    const countSpan = document.createElement('span');
+                    countSpan.className = 'vote-count';
+                    countSpan.textContent = voteCounts[playerId];
+                    btn.appendChild(countSpan);
+                }
+
+                // FIX FOR MOBILE: Attach both touch and click events
+                btn.addEventListener('click', (e) => {
+                    e.preventDefault(); // Prevent default mobile behavior
+                    submitVote(playerId);
+                });
+                btn.addEventListener('touchstart', (e) => {
+                    e.preventDefault(); // Prevent default mobile behavior
+                    if (btn.disabled) return;
+                    submitVote(playerId);
+                });
+                
+                voteButtonsEl.appendChild(btn);
+            });
+            
+            // FIX FOR MOBILE: Add touch event to skip button as well
+            skipVoteBtn.addEventListener('click', (e) => {
+                e.preventDefault();
+                submitVote('SKIP');
+            });
+            skipVoteBtn.addEventListener('touchstart', (e) => {
+                e.preventDefault();
+                if (skipVoteBtn.disabled) return;
+                submitVote('SKIP');
+            });
+        }
+        
+        // Remove duplicate event listener assignment
+        // skipVoteBtn.addEventListener('click', () => submitVote('SKIP'));
+
+        async function submitVote(votedId) {
+            if (!currentUserId || !currentLobbyDocId || lobbyDataCache.status !== 'voting') return;
+            
+            const lobbyDocRef = doc(db, BASE_LOBBY_PATH, currentLobbyDocId);
+            const votes = lobbyDataCache.votes || {};
+            
+            if (votes[currentUserId] !== undefined) {
+                 showStatus('You have already voted!', true);
+                 return;
+            }
+
+            votes[currentUserId] = votedId;
+            
+            try {
+                await updateDoc(lobbyDocRef, { votes: votes });
+                myVoteStatusEl.textContent = `Voted for ${votedId === 'SKIP' ? 'Skip' : lobbyDataCache.players[votedId]}. Waiting for others...`;
+                // Voting ends on timer, not by unanimous vote, so we just wait for the host timer logic.
+            } catch (error) {
+                showStatus(`Error submitting vote: ${error.message}`, true);
+                console.error("Vote Submission Error:", error);
+            }
+        }
+
+        function calculateVotes(votes, roles) {
+            if (!votes || Object.keys(votes).length < Object.keys(roles).length) {
+                // Not everyone voted, but time ran out. Tally votes anyway.
+            }
+
+            const playerIds = Object.keys(roles);
+            const imposterId = playerIds.find(id => roles[id] === 'IMPOSTER');
+
+            // Count total votes for each player
+            const voteCounts = {};
+            Object.values(votes).forEach(votedId => {
+                if (votedId !== 'SKIP') {
+                    voteCounts[votedId] = (voteCounts[votedId] || 0) + 1;
+                }
+            });
+
+            // Find the player with the absolute majority (more than 50% of the living players)
+            const totalPlayers = playerIds.length;
+            const requiredVotes = Math.floor(totalPlayers / 2) + 1; 
+
+            let maxVotes = 0;
+            let accusedPlayerId = null;
+            let tie = false;
+            
+            for (const [playerId, count] of Object.entries(voteCounts)) {
+                if (count > maxVotes) {
+                    maxVotes = count;
+                    accusedPlayerId = playerId;
+                    tie = false;
+                } else if (count === maxVotes) {
+                    tie = true;
+                }
+            }
+
+            if (accusedPlayerId && maxVotes >= requiredVotes && !tie) {
+                // A player was voted out by a majority
+                if (accusedPlayerId === imposterId) {
+                    // Imposter caught!
+                    return 'citizen_win';
+                } else {
+                    // Citizen was voted out. Game continues, but since we aren't tracking
+                    // eliminated players, we only check for Imposter win by round count later.
+                    // If a citizen is eliminated, the game continues.
+                    console.log(`Citizen ${lobbyDataCache.players[accusedPlayerId]} was voted out. Game continues.`);
+                    return null; 
+                }
+            }
+
+            // No majority vote or a tie, continue game
+            return null; 
+        }
+
+        // 7. END ROUND/RESET LOBBY LOGIC (HOST ONLY)
+        resetGameBtn.addEventListener('click', async () => {
+            if (!currentUserId || !currentLobbyDocId) return;
+            // The host can only reset the whole lobby back to 'waiting' state
+            
+            try {
+                const lobbyDocRef = doc(db, BASE_LOBBY_PATH, currentLobbyDocId);
+                
+                await updateDoc(lobbyDocRef, {
+                    status: 'waiting',
+                    gameWord: '',
+                    roles: {},
+                    currentRound: 0,
+                    roundEndTime: 0,
+                    votes: {},
+                    outcome: null 
+                });
+            } catch (error) {
+                showStatus(`Error resetting game: ${error.message}`, true);
+                console.error("Reset Game Error:", error);
+            }
+        });
+        
+        // 8. LEAVE GAME BUTTON
+        leaveGameBtn.addEventListener('click', async () => {
+            if (currentUserId && currentLobbyId) {
+                await removeUserFromLobby(currentLobbyId, currentUserId);
+                if (currentLobbyUnsubscribe) currentLobbyUnsubscribe();
+            }
+            currentLobbyId = null;
+            currentLobbyDocId = null;
+            lobbyIdEl.textContent = 'Waiting...';
+            joinInput.value = '';
+            showStatus('Left game. Ready to create/join new lobby.');
+            showLobbyScreen();
+        });
+
+
+        // 9. CLEANUP 
+        async function removeUserFromLobby(shortId, userId) {
+            if (!userId || !db) return;
+            try {
+                const q = collection(db, BASE_LOBBY_PATH);
+                const querySnapshot = await getDocs(q);
+                let fullDocId = null;
+                querySnapshot.forEach(doc => {
+                    if (doc.data().lobbyId === shortId) {
+                        fullDocId = doc.id;
+                    }
+                });
+
+                if (fullDocId) {
+                    const lobbyDocRef = doc(db, BASE_LOBBY_PATH, fullDocId);
+                    const docSnap = await getDoc(lobbyDocRef);
+                    
+                    if (docSnap.exists()) {
+                        const lobbyData = docSnap.data();
+                        const players = lobbyData.players || {};
+                        delete players[userId];
+                        
+                        const playerKeys = Object.keys(players);
+
+                        if (playerKeys.length === 0) {
+                            // If last player leaves, delete the lobby
+                            await deleteDoc(lobbyDocRef);
+                        } else if (lobbyData.ownerId === userId) {
+                            // Host leaves, pass ownership to the first remaining player
+                            const newOwnerId = playerKeys[0];
+                            await updateDoc(lobbyDocRef, { ownerId: newOwnerId, players: players });
+                        } else {
+                            // Regular player leaves
+                            await updateDoc(lobbyDocRef, { players: players });
+                        }
+                    }
+                }
+            } catch (e) {
+                console.error("Cleanup failed:", e);
+            }
+        }
+
+        function handleLobbyDeletion() {
+             // Triggered when a host deletes the lobby
+             if (currentLobbyId) {
+                currentLobbyId = null;
+                currentLobbyDocId = null;
+                lobbyIdEl.textContent = 'Waiting...';
+                joinInput.value = '';
+                showStatus('The host closed the lobby. Ready to create/join new lobby.', true);
+                showLobbyScreen();
+             }
+        }
+
+        function updatePlayerList(players, ownerId) {
+            playerListEl.innerHTML = '';
+            if (players) {
+                Object.keys(players).forEach(playerId => {
+                    const name = players[playerId];
+                    const isHostDisplay = playerId === ownerId;
+                    const isYou = playerId === currentUserId;
+                    
+                    const status = isHostDisplay ? ' (HOST)' : (isYou ? ' (You)' : '');
+                    
+                    const li = document.createElement('li');
+                    li.className = isYou ? 'font-bold text-green-400' : '';
+                    li.textContent = `${name}${status}`;
+                    playerListEl.appendChild(li);
+                });
+            }
+        }
+        
+        // Start the application
+        window.onload = initializeFirebase;
+
+    </script>
+</body>
+</html>
