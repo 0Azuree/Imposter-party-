@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Imposter</title>
+    <title>Imposter Game</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
@@ -157,7 +157,7 @@
         // --- GUARDED CONFIGURATION AND AUTH SETUP ---
         
         let firebaseConfig;
-        // Use the actual project ID as the fallback for Canvas's __app_id if running externally
+        // The App ID used for Firestore paths
         const FALLBACK_PROJECT_ID = 'impostergame-dev'; 
         const appId = typeof __app_id !== 'undefined' ? __app_id : FALLBACK_PROJECT_ID;
         let initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
@@ -177,8 +177,8 @@
             console.warn("System config failed to load/parse. Using user-provided Firebase config.");
             
             // --- USER'S FIREBASE CONFIGURATION (FIXED) ---
-            // This configuration will be used when the app is hosted outside the Canvas environment.
             firebaseConfig = {
+                // Ensure authDomain is correct for Auth functionality
                 apiKey: "AIzaSyCWEJOsUXTjdkYPUF_Iz6j5siieTJw5Rs0",
                 authDomain: "impostergame-dev.firebaseapp.com",
                 projectId: "impostergame-dev",
@@ -292,8 +292,9 @@
                     }
                 } else {
                     // Fallback: If no token was provided (e.g., in safe mode), sign in anonymously
+                    // This is the line that was failing due to auth/configuration-not-found
                     await signInAnonymously(auth); 
-                    showStatus('Signed in anonymously (No token provided). Ready to play.');
+                    showStatus('Signed in anonymously. Ready to play.');
                 }
                 
                 onAuthStateChanged(auth, (user) => {
