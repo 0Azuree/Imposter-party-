@@ -4,927 +4,428 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Imposter Game</title>
+    <!-- Load Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                }
+            }
+        }
+    </script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;600;800&display=swap');
+        /* Custom styles for a dark, space-themed look */
         body {
-            font-family: 'Inter', sans-serif;
-            background-color: #0d1117;
-            color: #c9d1d9;
-            display: flex;
-            justify-content: center;
-            align-items: center;
-            min-height: 100vh;
-            margin: 0;
-            padding: 1rem;
+            background-color: #1a1a2e; /* Dark purple/blue */
+            color: #ffffff;
         }
-        .container {
-            width: 100%;
-            max-width: 600px;
-            background-color: #161b22;
-            border: 1px solid #30363d;
-            border-radius: 12px;
-            padding: 1.5rem;
-            box-shadow: 0 10px 25px rgba(0, 0, 0, 0.5);
-        }
-        .btn {
-            padding: 0.75rem 1.5rem;
-            border-radius: 8px;
-            font-weight: 600;
-            transition: background-color 0.2s, transform 0.1s;
+        .card {
+            background-color: #2c2c54; /* Slightly lighter card background */
+            box-shadow: 0 10px 15px rgba(0, 0, 0, 0.5);
         }
         .btn-primary {
-            background-color: #238636;
-            color: white;
+            transition: all 0.2s;
+            background-color: #ff6b6b; /* Red accent */
+            color: #1a1a2e;
+            font-weight: bold;
+            box-shadow: 0 4px #e55039;
         }
         .btn-primary:hover {
-            background-color: #2ea043;
-            transform: translateY(-1px);
+            background-color: #ff8585;
+            box-shadow: 0 2px #e55039;
+            transform: translateY(2px);
         }
-        .btn-danger {
-            background-color: #a02e43;
-            color: white;
-        }
-        .btn-danger:hover {
-            background-color: #c93b58;
-            transform: translateY(-1px);
-        }
-        .status-box {
-            min-height: 40px;
-            padding: 0.75rem;
-            border-radius: 6px;
-        }
-        .btn-vote {
-            padding: 0.75rem;
-            border-radius: 8px;
-            font-weight: 600;
-            background-color: #30363d;
-            color: #c9d1d9;
-            transition: background-color 0.1s;
-            position: relative; /* For vote count positioning */
-        }
-        .btn-vote:hover {
-            background-color: #444c56;
-        }
-        .voted {
-             background-color: #3b82f6 !important; /* Blue for voted */
-             color: white;
-        }
-        .vote-count {
-            position: absolute;
-            top: 4px;
-            right: 4px;
-            background-color: #0d1117;
-            border-radius: 9999px;
-            padding: 2px 8px;
-            font-size: 0.75rem;
+        .btn-secondary {
+            transition: all 0.2s;
+            background-color: #48dbfb; /* Blue accent */
+            color: #1a1a2e;
             font-weight: bold;
+            box-shadow: 0 4px #1e90ff;
+        }
+        .btn-secondary:hover {
+            background-color: #6aefff;
+            box-shadow: 0 2px #1e90ff;
+            transform: translateY(2px);
+        }
+        /* Mobile optimization for buttons and inputs */
+        input[type="text"], .btn {
+            height: 52px;
+            font-size: 1.1rem;
         }
     </style>
 </head>
-<body>
-    <div class="container">
-        <h1 class="text-3xl font-bold mb-4 text-center text-red-400">IMPOSTER</h1>
-        <p id="userIdDisplay" class="text-xs text-gray-500 mb-6 text-center break-all">User ID: Loading...</p>
-
-        <!-- Status Message Box -->
-        <div id="statusMessage" class="status-box bg-gray-700 mb-6 text-center">Initializing...</div>
-
-        <!-- LOBBY SCREEN -->
-        <div id="lobbyScreen" class="space-y-4">
-            <h2 class="text-xl font-semibold">Lobby ID: <span id="lobbyId" class="text-yellow-400">Waiting...</span></h2>
-            
-            <div class="flex space-x-2">
-                <input type="text" id="joinInput" placeholder="Enter Lobby ID" 
-                       class="flex-grow bg-gray-800 border border-gray-600 rounded-lg p-2 text-white">
-                <button id="joinLobbyBtn" class="btn btn-primary">Join</button>
-            </div>
-            
-            <button id="createLobbyBtn" class="btn btn-primary w-full">Create New Lobby</button>
-            
-            <h3 class="mt-8 font-bold text-lg">Players in Lobby:</h3>
-            <ul id="playerList" class="space-y-2 list-disc list-inside">
-                <!-- Players will be listed here -->
-            </ul>
-
-            <!-- START BUTTON (Visible only to Host) -->
-            <button id="startGameBtn" class="btn btn-danger w-full mt-4 hidden">START GAME</button>
+<body class="p-4 flex items-center justify-center min-h-screen font-sans">
+    
+    <div id="app" class="w-full max-w-lg">
+        
+        <!-- Status Display -->
+        <div id="status-message" class="text-center p-3 mb-4 rounded-lg text-sm bg-gray-700 text-gray-300">
+            STATUS: Initializing Firebase...
         </div>
 
-        <!-- GAME SCREEN (Hidden initially) -->
-        <div id="gameScreen" class="space-y-6 text-center hidden">
-            <!-- Role Display -->
-            <div id="roleDisplayContainer">
-                <h2 id="roleTitle" class="text-4xl font-extrabold text-white"></h2>
-                <p class="text-lg text-gray-400">Your secret word is:</p>
-                <p id="gameWord" class="text-6xl font-black text-yellow-500 bg-gray-800 p-4 rounded-xl shadow-lg"></p>
-            </div>
+        <!-- Main Content Area -->
+        <div id="content" class="card p-6 rounded-xl space-y-6">
+            <h1 class="text-3xl font-extrabold text-center text-[#ff6b6b]">
+                <svg class="inline-block w-8 h-8 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                The Imposter Game
+            </h1>
 
-            <!-- Timer & Status -->
-            <div id="gameStatus" class="mt-8">
-                <h3 id="roundCounter" class="text-xl font-semibold text-gray-300"></h3>
-                <p id="timerDisplay" class="text-5xl font-extrabold text-red-500 mt-2"></p>
-            </div>
+            <!-- Lobby Creation/Joining View -->
+            <div id="lobby-view" class="space-y-4">
+                <button id="create-lobby-btn" class="w-full btn-primary btn rounded-lg">
+                    Create New Lobby
+                </button>
 
-            <!-- Voting Section -->
-            <div id="votingContainer" class="mt-6 space-y-4 hidden">
-                <h4 id="votingPrompt" class="text-xl font-bold text-yellow-400"></h4>
-                <div id="voteButtons" class="grid grid-cols-2 gap-3">
-                    <!-- Voting buttons will be injected here -->
+                <div class="flex items-center space-x-2 text-gray-400">
+                    <hr class="flex-grow border-gray-600">
+                    <span class="text-sm">OR JOIN</span>
+                    <hr class="flex-grow border-gray-600">
                 </div>
-                <button id="skipVoteBtn" class="btn bg-gray-600 hover:bg-gray-700 w-full text-white">SKIP VOTE</button>
-                <p id="myVoteStatus" class="text-sm text-gray-400"></p>
-                
+
+                <div class="flex space-x-2">
+                    <input type="text" id="join-lobby-id" placeholder="Enter Lobby ID" class="flex-grow p-3 rounded-lg bg-gray-600 text-white placeholder-gray-400 focus:ring-2 focus:ring-[#48dbfb] outline-none">
+                    <button id="join-lobby-btn" class="btn-secondary btn px-6 rounded-lg">
+                        Join
+                    </button>
+                </div>
             </div>
-            
-            <!-- End Round/Game Controls (Host-only or All) -->
-            <div class="mt-8">
-                <button id="leaveGameBtn" class="btn btn-primary w-full">LEAVE GAME</button>
-                <button id="resetGameBtn" class="btn btn-danger w-full mt-4 hidden">END ROUND & RESET LOBBY</button>
+
+            <!-- Game Lobby View -->
+            <div id="game-lobby-view" class="hidden space-y-4">
+                <h2 class="text-2xl font-bold text-center">Lobby: <span id="current-lobby-id" class="text-[#48dbfb]"></span></h2>
+                <p class="text-sm text-gray-400 text-center">Share this ID with friends!</p>
+                <div class="text-sm text-center text-gray-500">
+                    Your Player ID: <span id="current-user-id" class="break-all font-mono text-xs"></span>
+                </div>
+                
+                <h3 class="text-lg font-semibold mt-4">Players (<span id="player-count">0</span>):</h3>
+                <ul id="players-list" class="space-y-2 p-3 rounded-lg bg-gray-700 h-40 overflow-y-auto">
+                    <!-- Player names go here -->
+                </ul>
+
+                <button id="start-game-btn" class="w-full btn-primary btn rounded-lg mt-4 disabled:opacity-50" disabled>
+                    Start Game (Need 3+ Players)
+                </button>
+                <button id="leave-lobby-btn" class="w-full btn-secondary btn rounded-lg mt-2">
+                    Leave Lobby
+                </button>
             </div>
         </div>
     </div>
-
-    <!-- Firebase SDKs -->
+    
+    <!-- Firebase Imports -->
     <script type="module">
-        // Import necessary Firebase modules
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, setDoc, onSnapshot, collection, updateDoc, getDoc, getDocs, deleteDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
-        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore-lite.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, collection, deleteDoc, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
-        // ===============================================================
-        // --- GUARDED CONFIGURATION AND AUTH SETUP ---
-        
-        let firebaseConfig;
-        // The App ID used for Firestore paths
-        const FALLBACK_PROJECT_ID = 'impostergame-dev'; 
-        const appId = typeof __app_id !== 'undefined' ? __app_id : FALLBACK_PROJECT_ID;
-        let initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
-        
-        // 1. Try to load config from the Canvas environment variables
-        try {
-            const globalConfigString = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
-            firebaseConfig = JSON.parse(globalConfigString);
-            
-            // Validate that the config has the necessary keys
-            if (!firebaseConfig || !firebaseConfig.projectId || !firebaseConfig.apiKey) {
-                throw new Error("System config is missing or invalid. Requires manual config.");
-            }
+        // Global Firebase Configuration
+        setLogLevel('Debug');
+        const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+        const firebaseConfig = typeof __firebase_config !== 'undefined' ? JSON.parse(__firebase_config) : {};
+        const initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
 
-        } catch (e) {
-            // 2. FALLBACK for external hosting: Using the configuration provided by the user
-            console.warn("System config failed to load/parse. Using user-provided Firebase config.");
-            
-            // --- USER'S FIREBASE CONFIGURATION (FIXED) ---
-            firebaseConfig = {
-                // Ensure authDomain is correct for Auth functionality
-                apiKey: "AIzaSyCWEJOsUXTjdkYPUF_Iz6j5siieTJw5Rs0",
-                authDomain: "impostergame-dev.firebaseapp.com",
-                projectId: "impostergame-dev",
-                storageBucket: "impostergame-dev.firebasestorage.app",
-                messagingSenderId: "619697208061",
-                appId: "1:619697208061:web:0a62ff8e6a9a701140dc94",
-                measurementId: "G-C1HWQ86HV3"
-            };
-            // ---------------------------------------------
-            
-            initialAuthToken = null; 
-        }
-        // ===============================================================
-
-        // Debug logging for Firebase operations
-        setLogLevel('debug'); 
-        
-        // Game Constants
-        const WORDS = ["Coffee", "Pizza", "Ocean", "Airplane", "Soccer", "Mountain", "Library", "Pencil", "Rainbow", "Cloud", "Sun", "Moon", "Star", "Book", "Chair", "Table", "Phone", "Car", "Bus", "Train"];
-        const MAX_ROUNDS = 4;
-        const ROUND_DURATION_SECONDS = 120; // 2 minutes
-        const INTERMISSION_SECONDS = 5; // 5 seconds intermission
-        
-        // Firebase Variables
-        let app;
-        let db;
-        let auth;
-        let currentUserId = null;
+        let app, db, auth;
+        let userId = null;
         let currentLobbyId = null;
-        let currentLobbyDocId = null;
-        let currentLobbyUnsubscribe = null; // To stop the real-time listener
+        let unsubscribeLobby = null;
 
-        // Game State Variables
-        let roundTimerInterval = null; // To hold the interval ID for the countdown
-        let isHost = false; // Track host status
-        let lobbyDataCache = null; // Cache of the latest lobby data
+        // --- UI UTILITIES ---
 
-        // DOM Elements
-        const statusMessageEl = document.getElementById('statusMessage');
-        const userIdDisplayEl = document.getElementById('userIdDisplay');
-        const lobbyIdEl = document.getElementById('lobbyId');
-        const playerListEl = document.getElementById('playerList');
-        const createLobbyBtn = document.getElementById('createLobbyBtn');
-        const joinLobbyBtn = document.getElementById('joinLobbyBtn');
-        const joinInput = document.getElementById('joinInput');
-        const startGameBtn = document.getElementById('startGameBtn');
-        const leaveGameBtn = document.getElementById('leaveGameBtn');
-        const resetGameBtn = document.getElementById('resetGameBtn');
-        const lobbyScreenEl = document.getElementById('lobbyScreen');
-        const gameScreenEl = document.getElementById('gameScreen');
-        const roleTitleEl = document.getElementById('roleTitle');
-        const gameWordEl = document.getElementById('gameWord');
-        const roundCounterEl = document.getElementById('roundCounter');
-        const timerDisplayEl = document.getElementById('timerDisplay');
-        const votingPromptEl = document.getElementById('votingPrompt');
-        const voteButtonsEl = document.getElementById('voteButtons');
-        const skipVoteBtn = document.getElementById('skipVoteBtn');
-        const myVoteStatusEl = document.getElementById('myVoteStatus');
-        const roleDisplayContainerEl = document.getElementById('roleDisplayContainer');
-        const votingContainerEl = document.getElementById('votingContainer');
-
-
-        const BASE_LOBBY_PATH = `/artifacts/${appId}/public/data/lobbies`;
-
-        // Utility function to display messages
-        function showStatus(message, isError = false) {
-            statusMessageEl.textContent = message;
-            statusMessageEl.className = `status-box mb-6 text-center font-medium ${isError ? 'bg-red-900 text-red-300' : 'bg-green-900 text-green-300'}`;
-            console.log(`STATUS: ${message}`);
+        const statusEl = document.getElementById('status-message');
+        const lobbyViewEl = document.getElementById('lobby-view');
+        const gameLobbyViewEl = document.getElementById('game-lobby-view');
+        const currentLobbyIdEl = document.getElementById('current-lobby-id');
+        const currentUserIdEl = document.getElementById('current-user-id');
+        const playersListEl = document.getElementById('players-list');
+        const playerCountEl = document.getElementById('player-count');
+        const startGameBtn = document.getElementById('start-game-btn');
+        const leaveLobbyBtn = document.getElementById('leave-lobby-btn');
+        
+        function updateStatus(message) {
+            statusEl.textContent = `STATUS: ${message}`;
         }
         
-        // Screen Management
-        function showLobbyScreen() {
-            gameScreenEl.classList.add('hidden');
-            lobbyScreenEl.classList.remove('hidden');
-            clearInterval(roundTimerInterval);
-            roundTimerInterval = null;
+        function displayErrorMessage(message) {
+             statusEl.textContent = `ERROR: ${message}`;
+             statusEl.classList.add('bg-red-700', 'text-red-200');
+             setTimeout(() => {
+                 statusEl.classList.remove('bg-red-700', 'text-red-200');
+                 statusEl.textContent = '';
+             }, 5000);
         }
 
-        function showGameScreen() {
-            lobbyScreenEl.classList.add('hidden');
-            gameScreenEl.classList.remove('hidden');
-        }
+        // --- FIREBASE INITIALIZATION & AUTHENTICATION ---
 
-        function formatTime(seconds) {
-            const minutes = Math.floor(seconds / 60);
-            const remainderSeconds = seconds % 60;
-            return `${minutes}:${remainderSeconds < 10 ? '0' : ''}${remainderSeconds}`;
-        }
-        
-        // 1. INITIALIZE FIREBASE AND AUTHENTICATION
         async function initializeFirebase() {
             try {
-                // Initialize Firebase with the determined configuration
+                updateStatus("Initializing Firebase...");
                 app = initializeApp(firebaseConfig);
                 db = getFirestore(app);
                 auth = getAuth(app);
-                
-                showStatus('Firebase initialized. Authenticating...');
 
-                // Try to sign in with the system-provided custom token
+                // Authenticate user
+                updateStatus("Authenticating...");
                 if (initialAuthToken) {
-                    try {
-                        await signInWithCustomToken(auth, initialAuthToken);
-                        showStatus('Signed in using Custom Token.');
-                    } catch (e) {
-                        console.warn("Custom token sign-in failed, falling back to Anonymous.", e);
-                        // Fallback: If custom token fails (e.g., token expired or invalid), sign in anonymously
-                        await signInAnonymously(auth); 
-                        showStatus('Signed in anonymously (Token fallback). Ready to play.');
-                    }
+                    await signInWithCustomToken(auth, initialAuthToken);
                 } else {
-                    // Fallback: If no token was provided (e.g., in safe mode), sign in anonymously
-                    // This is the line that was failing due to auth/configuration-not-found
-                    await signInAnonymously(auth); 
-                    showStatus('Signed in anonymously. Ready to play.');
+                    await signInAnonymously(auth);
                 }
-                
+
+                // Wait for auth state to resolve
                 onAuthStateChanged(auth, (user) => {
                     if (user) {
-                        currentUserId = user.uid;
-                        userIdDisplayEl.textContent = `User ID: ${currentUserId}`;
-                        window.addEventListener('beforeunload', () => removeUserFromLobby(currentLobbyId, currentUserId));
+                        userId = user.uid;
+                        updateStatus("Signed in anonymously. Ready to play.");
+                        currentUserIdEl.textContent = userId;
+                        // Check if the user was in a lobby previously (optional, for robustness)
                     } else {
-                        currentUserId = null;
-                        userIdDisplayEl.textContent = `User ID: Not Signed In`;
-                        showStatus('Authentication failed. Please refresh or check connection.', true);
+                        updateStatus("Authentication failed. Critical failure.");
+                        console.error("Firebase Init Error: Firebase: Error (auth/configuration-not-found).. Critical failure.");
                     }
                 });
+
             } catch (error) {
-                // This will catch the final, critical failure point like (auth/configuration-not-found)
-                showStatus(`Firebase Init Error: ${error.message}. Critical failure.`, true);
+                updateStatus(`Firebase Initialization Failed: ${error.message}`);
                 console.error("Firebase Initialization Failed:", error);
             }
         }
+
+        // --- LOBBY CONFIGURATION ---
         
-        // 2. LOBBY CREATION
-        createLobbyBtn.addEventListener('click', async () => {
-            if (!currentUserId) return showStatus('Please wait for sign-in...', true);
+        // **********************************************
+        // * THE FIX IS HERE: MAX_PLAYERS IS INCREASED *
+        // **********************************************
+        const MAX_PLAYERS = 100; // Increased from 2 or 4 to 100
+
+        const MIN_PLAYERS_TO_START = 3; 
+
+        function getLobbyDocRef(id) {
+            return doc(db, `artifacts/${appId}/public/data/lobbies`, id);
+        }
+
+        function generateLobbyId() {
+            // Generate a simple 4-digit ID
+            return Math.random().toString(36).substring(2, 6).toUpperCase();
+        }
+
+        // --- LOBBY CREATION & JOINING ---
+
+        async function createLobby() {
+            if (!userId) return;
+
+            updateStatus("Creating new lobby...");
+            const newLobbyId = generateLobbyId();
+            const lobbyRef = getLobbyDocRef(newLobbyId);
+
+            const initialLobbyData = {
+                id: newLobbyId,
+                status: 'waiting',
+                players: [{ id: userId, name: `Player_${userId.substring(0, 4)}`, isHost: true }],
+                hostId: userId,
+                maxPlayers: MAX_PLAYERS,
+                createdAt: new Date().toISOString()
+            };
+
             try {
-                showStatus('Creating new lobby...');
-                const lobbyRef = collection(db, BASE_LOBBY_PATH);
-                const docRef = doc(lobbyRef); // Get a new document reference with an auto-generated ID first
-                
-                // Use the full doc ID to generate a short, 6-character Lobby ID
-                const newLobbyId = docRef.id.substring(0, 6).toUpperCase(); 
-
-                await setDoc(docRef, {
-                    lobbyId: newLobbyId,
-                    createdAt: Date.now(),
-                    status: 'waiting',
-                    ownerId: currentUserId,
-                    players: { [currentUserId]: 'Host' }, // Initial Host player object
-                    gameWord: '',
-                    roles: {},
-                    currentRound: 0,
-                    roundEndTime: 0,
-                    votes: {},
-                    outcome: null 
-                });
-                
-                enterLobby(newLobbyId, docRef.id);
-
+                await setDoc(lobbyRef, initialLobbyData);
+                joinLobby(newLobbyId);
             } catch (error) {
-                showStatus(`Error creating lobby: ${error.message}`, true);
+                updateStatus(`Error creating lobby: ${error.message}`);
+                displayErrorMessage(`Lobby Creation Error: FirebaseError: ${error.message}`);
                 console.error("Lobby Creation Error:", error);
             }
-        });
-        
-        // 3. LOBBY JOINING
-        joinLobbyBtn.addEventListener('click', () => {
-            const id = joinInput.value.trim().toUpperCase();
-            if (id.length === 6) {
-                findLobbyByShortId(id);
-            } else {
-                showStatus('Lobby ID must be 6 characters.', true);
-            }
-        });
+        }
 
-        async function findLobbyByShortId(shortId) {
-             if (!currentUserId) return showStatus('Please wait for sign-in...', true);
-            showStatus(`Searching for lobby ${shortId}...`);
+        async function joinLobby(lobbyId) {
+            if (!userId || !lobbyId) return;
+
+            const lobbyRef = getLobbyDocRef(lobbyId);
+
             try {
-                const q = collection(db, BASE_LOBBY_PATH);
-                const querySnapshot = await getDocs(q); 
-                let foundDocId = null;
-                let actualDocRef;
-
-                querySnapshot.forEach(doc => {
-                    if (doc.data().lobbyId === shortId) {
-                        foundDocId = doc.id;
-                        actualDocRef = doc.ref;
-                    }
-                });
-
-                if (foundDocId) {
-                    const lobbyData = (await getDoc(actualDocRef)).data();
-                    const players = lobbyData.players || {};
-
-                    if (lobbyData.status !== 'waiting' && !players[currentUserId]) {
-                        showStatus('Game is already in progress.', true);
-                        return;
-                    }
-
-                    if (!players[currentUserId]) {
-                        const playerCount = Object.keys(players).length;
-                        players[currentUserId] = `Player ${playerCount + 1}`;
-                        await updateDoc(actualDocRef, { players: players });
-                    }
-                    
-                    enterLobby(shortId, foundDocId);
-                } else {
-                    showStatus(`Lobby ${shortId} not found.`, true);
+                const docSnap = await getDoc(lobbyRef);
+                
+                if (!docSnap.exists()) {
+                    displayErrorMessage(`Lobby ${lobbyId} not found.`);
+                    return;
                 }
+
+                const lobbyData = docSnap.data();
+
+                if (lobbyData.status !== 'waiting') {
+                    displayErrorMessage(`Lobby ${lobbyId} has already started.`);
+                    return;
+                }
+                
+                // Check if lobby is full using the new MAX_PLAYERS setting
+                if (lobbyData.players.length >= MAX_PLAYERS) {
+                    displayErrorMessage(`Lobby ${lobbyId} is full! Max: ${MAX_PLAYERS}`);
+                    return;
+                }
+
+                // Add the current player if they aren't already in the list
+                if (!lobbyData.players.some(p => p.id === userId)) {
+                    const playerName = `Player_${userId.substring(0, 4)}`;
+                    const updatedPlayers = [...lobbyData.players, { id: userId, name: playerName, isHost: false }];
+                    
+                    await updateDoc(lobbyRef, {
+                        players: updatedPlayers
+                    });
+                }
+
+                currentLobbyId = lobbyId;
+                enterLobbyView(lobbyId);
+
             } catch (error) {
-                showStatus(`Error joining lobby: ${error.message}`, true);
-                console.error("Join Lobby Error:", error);
+                displayErrorMessage(`Error joining lobby: ${error.message}`);
+                console.error("Error joining lobby:", error);
             }
         }
-        
-        // 4. LOBBY MANAGEMENT (Real-time listener)
-        function enterLobby(shortId, fullDocId) {
-            currentLobbyId = shortId;
-            currentLobbyDocId = fullDocId;
-            lobbyIdEl.textContent = shortId;
-            joinInput.value = shortId;
-            showStatus(`Joined Lobby ${shortId}!`);
-            showLobbyScreen();
 
-            const lobbyDocRef = doc(db, BASE_LOBBY_PATH, fullDocId);
+        async function leaveLobby() {
+            if (!currentLobbyId || !userId) return;
 
-            if (currentLobbyUnsubscribe) currentLobbyUnsubscribe();
+            try {
+                const lobbyRef = getLobbyDocRef(currentLobbyId);
+                const docSnap = await getDoc(lobbyRef);
 
-            currentLobbyUnsubscribe = onSnapshot(lobbyDocRef, (docSnap) => {
                 if (docSnap.exists()) {
                     const lobbyData = docSnap.data();
-                    isHost = lobbyData.ownerId === currentUserId;
-                    lobbyDataCache = lobbyData;
-                    handleLobbyUpdate(lobbyData);
-                } else {
-                    handleLobbyDeletion();
-                }
-            }, (error) => {
-                showStatus(`Lobby listener error: ${error.message}`, true);
-                console.error("Snapshot Error:", error);
-            });
-        }
-        
-        function handleLobbyUpdate(lobbyData) {
-            updatePlayerList(lobbyData.players, lobbyData.ownerId);
-            resetGameBtn.classList.add('hidden'); 
+                    const updatedPlayers = lobbyData.players.filter(p => p.id !== userId);
 
-            if (lobbyData.status === 'waiting') {
-                handleWaitingState(lobbyData);
-            } else if (lobbyData.status === 'discussion' || lobbyData.status === 'intermission' || lobbyData.status === 'voting') {
-                handleGameState(lobbyData);
-            } else if (lobbyData.status === 'finished') {
-                handleFinishedState(lobbyData);
-            }
-        }
-        
-        function handleWaitingState(lobbyData) {
-            showLobbyScreen();
-            
-            if (isHost) {
-                startGameBtn.classList.remove('hidden');
-                const playerCount = Object.keys(lobbyData.players).length;
-                startGameBtn.disabled = playerCount < 3;
-                startGameBtn.textContent = playerCount < 3 ? `Need ${3 - playerCount} more players` : 'START GAME';
-            } else {
-                startGameBtn.classList.add('hidden');
-            }
-        }
+                    if (updatedPlayers.length > 0) {
+                        // Update player list and potentially change host
+                        const isHost = lobbyData.hostId === userId;
+                        const newHostId = isHost ? updatedPlayers[0].id : lobbyData.hostId;
 
-        function handleGameState(lobbyData) {
-            showGameScreen();
-            displayRoleScreen(lobbyData.roles[currentUserId], lobbyData.gameWord);
-            
-            // Start the client-side timer refresh and host-side logic
-            if (roundTimerInterval) clearInterval(roundTimerInterval);
-            roundTimerInterval = setInterval(() => {
-                updateTimerDisplay(lobbyData);
-            }, 1000);
-            
-            // Display the correct UI container based on state
-            if (lobbyData.status === 'discussion') {
-                showDiscussionUI(lobbyData);
-            } else if (lobbyData.status === 'intermission') {
-                showIntermissionUI(lobbyData);
-            } else if (lobbyData.status === 'voting') {
-                showVotingUI(lobbyData);
-            }
-
-            if (isHost) {
-                resetGameBtn.classList.remove('hidden'); // Host can reset the whole game
-            }
-        }
-
-        function handleFinishedState(lobbyData) {
-            showGameScreen();
-            clearInterval(roundTimerInterval);
-            roundTimerInterval = null;
-            
-            roleTitleEl.textContent = 'GAME OVER';
-            roleTitleEl.className = 'text-5xl font-extrabold text-red-700';
-            roleDisplayContainerEl.classList.remove('hidden');
-            votingContainerEl.classList.add('hidden');
-            timerDisplayEl.classList.add('hidden');
-
-            // Find the Imposter's name
-            const imposterId = Object.keys(lobbyData.roles).find(id => lobbyData.roles[id] === 'IMPOSTER');
-            const imposterName = lobbyData.players[imposterId] || 'Unknown Player';
-
-            if (lobbyData.outcome === 'citizen_win') {
-                gameWordEl.textContent = `CITIZENS WIN! Imposter was: ${imposterName}. Word: ${lobbyData.gameWord}`;
-                gameWordEl.className = 'text-2xl font-black text-green-500 bg-gray-800 p-4 rounded-xl shadow-lg';
-                showStatus(`Game Over: Citizens won!`, false);
-            } else { // imposter_win (all rounds exhausted)
-                gameWordEl.textContent = `IMPOSTER WINS! The Imposter was ${imposterName}. Word: ${lobbyData.gameWord}`;
-                gameWordEl.className = 'text-2xl font-black text-red-500 bg-gray-800 p-4 rounded-xl shadow-lg';
-                showStatus(`Game Over: The Imposter escaped!`, true);
-            }
-        }
-
-        // --- TIMER AND STATE TRANSITION LOGIC (HOST ONLY) ---
-        async function startHostTimerLogic(lobbyData) {
-            if (!isHost) return;
-            const now = Date.now();
-            const timeRemaining = Math.max(0, lobbyData.roundEndTime - now);
-            const lobbyDocRef = doc(db, BASE_LOBBY_PATH, currentLobbyDocId);
-            
-            // If time is up, trigger state change
-            if (timeRemaining <= 0) {
-                let newStatus;
-                let newRound = lobbyData.currentRound;
-                let newEndTime;
-
-                if (lobbyData.status === 'discussion') {
-                    // Discussion ends (120s) -> Go to Voting
-                    newStatus = 'voting';
-                    // Voting phase is not strictly timed in Firestore, but we set a long end time
-                    newEndTime = now + (ROUND_DURATION_SECONDS * 1000); 
-                    await updateDoc(lobbyDocRef, { status: newStatus, roundEndTime: newEndTime, votes: {} });
-
-                } else if (lobbyData.status === 'voting') {
-                    // Voting ends -> Go to Intermission
-                    const outcome = calculateVotes(lobbyData.votes, lobbyData.roles);
-                    if (outcome) {
-                         // Win condition met, jump to finished state
-                         newEndTime = now + (INTERMISSION_SECONDS * 1000); // Wait 5 seconds before showing final screen
-                         await updateDoc(lobbyDocRef, { status: 'finished', outcome: outcome, roundEndTime: newEndTime });
-                         return;
+                        await updateDoc(lobbyRef, {
+                            players: updatedPlayers,
+                            hostId: newHostId
+                        });
+                    } else {
+                        // If no players left, delete the lobby
+                        await deleteDoc(lobbyRef);
                     }
-                    
-                    // No win/loss, proceed to intermission
-                    newStatus = 'intermission';
-                    newEndTime = now + (INTERMISSION_SECONDS * 1000);
-                    await updateDoc(lobbyDocRef, { status: newStatus, roundEndTime: newEndTime });
-
-                } else if (lobbyData.status === 'intermission') {
-                    // Intermission ends (5s) -> Go to next Discussion round or End Game
-                    newRound++;
-                    if (newRound > MAX_ROUNDS) {
-                        // Max rounds reached, Imposter wins
-                        await updateDoc(lobbyDocRef, { status: 'finished', outcome: 'imposter_win', roundEndTime: 0 });
-                        return;
-                    }
-                    
-                    // Start next discussion round
-                    newStatus = 'discussion';
-                    newEndTime = now + (ROUND_DURATION_SECONDS * 1000);
-                    await updateDoc(lobbyDocRef, { status: newStatus, currentRound: newRound, roundEndTime: newEndTime, votes: {} });
                 }
-            }
-        }
-        
-        function updateTimerDisplay(lobbyData) {
-            const now = Date.now();
-            const timeRemainingMs = Math.max(0, lobbyData.roundEndTime - now);
-            const timeRemainingSec = Math.ceil(timeRemainingMs / 1000);
-            
-            // Update display
-            timerDisplayEl.textContent = formatTime(timeRemainingSec);
-            
-            // Host logic needs to run constantly during game phases
-            if (isHost && (lobbyData.status === 'discussion' || lobbyData.status === 'intermission' || lobbyData.status === 'voting')) {
-                startHostTimerLogic(lobbyData);
-            }
-        }
 
-        // 5. START GAME LOGIC (HOST ONLY)
-        startGameBtn.addEventListener('click', async () => {
-            if (!currentUserId || !currentLobbyDocId) return;
-            showStatus('Starting game and assigning roles...');
-            
-            try {
-                const lobbyDocRef = doc(db, BASE_LOBBY_PATH, currentLobbyDocId);
-                const docSnap = await getDoc(lobbyDocRef);
-                const lobbyData = docSnap.data();
-                
-                const playerIds = Object.keys(lobbyData.players);
-                
-                if (playerIds.length < 3) return showStatus('Need at least 3 players to start.', true);
-                
-                // 1. Assign Roles
-                const imposterId = playerIds[Math.floor(Math.random() * playerIds.length)];
-                const roles = {};
-                playerIds.forEach(id => {
-                    roles[id] = id === imposterId ? 'IMPOSTER' : 'CITIZEN';
-                });
-
-                // 2. Assign Word
-                const gameWord = WORDS[Math.floor(Math.random() * WORDS.length)];
-
-                // 3. Update Firebase (This triggers the game on all phones)
-                await updateDoc(lobbyDocRef, {
-                    status: 'discussion',
-                    gameWord: gameWord,
-                    roles: roles,
-                    currentRound: 1,
-                    roundEndTime: Date.now() + (ROUND_DURATION_SECONDS * 1000),
-                    outcome: null,
-                    votes: {}
-                });
             } catch (error) {
-                showStatus(`Error starting game: ${error.message}`, true);
-                console.error("Start Game Error:", error);
-            }
-        });
-
-        // --- UI STATE HANDLERS ---
-        function showDiscussionUI(lobbyData) {
-            roleDisplayContainerEl.classList.remove('hidden');
-            votingContainerEl.classList.add('hidden');
-            timerDisplayEl.classList.remove('hidden');
-            timerDisplayEl.classList.remove('text-yellow-500');
-            timerDisplayEl.classList.add('text-red-500');
-            roundCounterEl.textContent = `Round ${lobbyData.currentRound} / ${MAX_ROUNDS}`;
-            showStatus(`Round ${lobbyData.currentRound} Discussion is live.`, false);
-        }
-
-        function showIntermissionUI(lobbyData) {
-            roleDisplayContainerEl.classList.remove('hidden');
-            votingContainerEl.classList.add('hidden');
-            timerDisplayEl.classList.remove('hidden');
-            timerDisplayEl.classList.remove('text-red-500');
-            timerDisplayEl.classList.add('text-yellow-500');
-            roundCounterEl.textContent = `Next round starts in:`;
-            showStatus(`Voting complete! Next round starting in 5 seconds.`, false);
-        }
-
-        function showVotingUI(lobbyData) {
-            roleDisplayContainerEl.classList.remove('hidden');
-            votingContainerEl.classList.remove('hidden');
-            timerDisplayEl.classList.add('hidden'); // Timer is hidden during the voting period for focus
-            
-            votingPromptEl.textContent = "Vote for the Imposter:";
-            renderVotingUI(lobbyData.players, lobbyData.votes);
-            
-            const userVoted = lobbyData.votes[currentUserId] !== undefined;
-            skipVoteBtn.disabled = userVoted;
-            
-            if (userVoted) {
-                 myVoteStatusEl.textContent = "Your vote has been cast. Waiting for others...";
-            } else {
-                 myVoteStatusEl.textContent = "Cast your vote or skip.";
+                console.error("Error leaving lobby:", error);
+                // Continue to exit view even on error
             }
 
-            showStatus("Time to vote!", false);
-        }
-
-        // 6. DISPLAY ROLE SCREEN 
-        function displayRoleScreen(role, word) {
-            if (!role) {
-                roleTitleEl.textContent = 'Waiting for Round 1...';
-                gameWordEl.textContent = '...';
-                return;
-            }
-            
-            // Host is a regular player, so role is checked for everyone
-            if (role === 'IMPOSTER') {
-                roleTitleEl.textContent = 'IMPOSTER';
-                roleTitleEl.className = 'text-4xl font-extrabold text-red-500';
-                gameWordEl.textContent = '???';
-                gameWordEl.className = 'text-6xl font-black text-gray-500 bg-gray-800 p-4 rounded-xl shadow-lg';
-            } else { // CITIZEN (or Host is Citizen)
-                roleTitleEl.textContent = 'CITIZEN';
-                roleTitleEl.className = 'text-4xl font-extrabold text-green-500';
-                gameWordEl.textContent = word;
-                gameWordEl.className = 'text-6xl font-black text-yellow-500 bg-gray-800 p-4 rounded-xl shadow-lg';
-            }
-        }
-        
-        // --- VOTING LOGIC ---
-
-        function renderVotingUI(players, currentVotes) {
-            voteButtonsEl.innerHTML = '';
-            
-            const playerIds = Object.keys(players);
-            
-            // Count total votes for each player
-            const voteCounts = {};
-            Object.values(currentVotes).forEach(votedId => {
-                voteCounts[votedId] = (voteCounts[votedId] || 0) + 1;
-            });
-
-            playerIds.forEach(playerId => {
-                const name = players[playerId];
-                const isYou = playerId === currentUserId;
-                
-                const btn = document.createElement('button');
-                btn.className = 'btn-vote relative';
-                btn.textContent = name + (isYou ? ' (You)' : '');
-                btn.dataset.playerId = playerId;
-                
-                // Disable vote for self or if vote already cast
-                btn.disabled = isYou || currentVotes[currentUserId] !== undefined;
-
-                // Highlight if this button is the player's vote
-                if (currentVotes[currentUserId] === playerId) {
-                    btn.classList.add('voted');
-                }
-                
-                // Display vote count only during voting
-                if (voteCounts[playerId] > 0) {
-                    const countSpan = document.createElement('span');
-                    countSpan.className = 'vote-count';
-                    countSpan.textContent = voteCounts[playerId];
-                    btn.appendChild(countSpan);
-                }
-
-                // FIX FOR MOBILE: Attach both touch and click events
-                btn.addEventListener('click', (e) => {
-                    e.preventDefault(); // Prevent default mobile behavior
-                    submitVote(playerId);
-                });
-                btn.addEventListener('touchstart', (e) => {
-                    e.preventDefault(); // Prevent default mobile behavior
-                    if (btn.disabled) return;
-                    submitVote(playerId);
-                });
-                
-                voteButtonsEl.appendChild(btn);
-            });
-            
-            // FIX FOR MOBILE: Add touch event to skip button as well
-            skipVoteBtn.addEventListener('click', (e) => {
-                e.preventDefault();
-                submitVote('SKIP');
-            });
-            skipVoteBtn.addEventListener('touchstart', (e) => {
-                e.preventDefault();
-                if (skipVoteBtn.disabled) return;
-                submitVote('SKIP');
-            });
-        }
-        
-        // Remove duplicate event listener assignment
-        // skipVoteBtn.addEventListener('click', () => submitVote('SKIP'));
-
-        async function submitVote(votedId) {
-            if (!currentUserId || !currentLobbyDocId || lobbyDataCache.status !== 'voting') return;
-            
-            const lobbyDocRef = doc(db, BASE_LOBBY_PATH, currentLobbyDocId);
-            const votes = lobbyDataCache.votes || {};
-            
-            if (votes[currentUserId] !== undefined) {
-                 showStatus('You have already voted!', true);
-                 return;
-            }
-
-            votes[currentUserId] = votedId;
-            
-            try {
-                await updateDoc(lobbyDocRef, { votes: votes });
-                myVoteStatusEl.textContent = `Voted for ${votedId === 'SKIP' ? 'Skip' : lobbyDataCache.players[votedId]}. Waiting for others...`;
-                // Voting ends on timer, not by unanimous vote, so we just wait for the host timer logic.
-            } catch (error) {
-                showStatus(`Error submitting vote: ${error.message}`, true);
-                console.error("Vote Submission Error:", error);
-            }
-        }
-
-        function calculateVotes(votes, roles) {
-            if (!votes || Object.keys(votes).length < Object.keys(roles).length) {
-                // Not everyone voted, but time ran out. Tally votes anyway.
-            }
-
-            const playerIds = Object.keys(roles);
-            const imposterId = playerIds.find(id => roles[id] === 'IMPOSTER');
-
-            // Count total votes for each player
-            const voteCounts = {};
-            Object.values(votes).forEach(votedId => {
-                if (votedId !== 'SKIP') {
-                    voteCounts[votedId] = (voteCounts[votedId] || 0) + 1;
-                }
-            });
-
-            // Find the player with the absolute majority (more than 50% of the living players)
-            const totalPlayers = playerIds.length;
-            const requiredVotes = Math.floor(totalPlayers / 2) + 1; 
-
-            let maxVotes = 0;
-            let accusedPlayerId = null;
-            let tie = false;
-            
-            for (const [playerId, count] of Object.entries(voteCounts)) {
-                if (count > maxVotes) {
-                    maxVotes = count;
-                    accusedPlayerId = playerId;
-                    tie = false;
-                } else if (count === maxVotes) {
-                    tie = true;
-                }
-            }
-
-            if (accusedPlayerId && maxVotes >= requiredVotes && !tie) {
-                // A player was voted out by a majority
-                if (accusedPlayerId === imposterId) {
-                    // Imposter caught!
-                    return 'citizen_win';
-                } else {
-                    // Citizen was voted out. Game continues, but since we aren't tracking
-                    // eliminated players, we only check for Imposter win by round count later.
-                    // If a citizen is eliminated, the game continues.
-                    console.log(`Citizen ${lobbyDataCache.players[accusedPlayerId]} was voted out. Game continues.`);
-                    return null; 
-                }
-            }
-
-            // No majority vote or a tie, continue game
-            return null; 
-        }
-
-        // 7. END ROUND/RESET LOBBY LOGIC (HOST ONLY)
-        resetGameBtn.addEventListener('click', async () => {
-            if (!currentUserId || !currentLobbyDocId) return;
-            // The host can only reset the whole lobby back to 'waiting' state
-            
-            try {
-                const lobbyDocRef = doc(db, BASE_LOBBY_PATH, currentLobbyDocId);
-                
-                await updateDoc(lobbyDocRef, {
-                    status: 'waiting',
-                    gameWord: '',
-                    roles: {},
-                    currentRound: 0,
-                    roundEndTime: 0,
-                    votes: {},
-                    outcome: null 
-                });
-            } catch (error) {
-                showStatus(`Error resetting game: ${error.message}`, true);
-                console.error("Reset Game Error:", error);
-            }
-        });
-        
-        // 8. LEAVE GAME BUTTON
-        leaveGameBtn.addEventListener('click', async () => {
-            if (currentUserId && currentLobbyId) {
-                await removeUserFromLobby(currentLobbyId, currentUserId);
-                if (currentLobbyUnsubscribe) currentLobbyUnsubscribe();
+            if (unsubscribeLobby) {
+                unsubscribeLobby(); // Stop listening to updates
+                unsubscribeLobby = null;
             }
             currentLobbyId = null;
-            currentLobbyDocId = null;
-            lobbyIdEl.textContent = 'Waiting...';
-            joinInput.value = '';
-            showStatus('Left game. Ready to create/join new lobby.');
-            showLobbyScreen();
+            exitLobbyView();
+            updateStatus("Lobby left.");
+        }
+
+        // --- REAL-TIME LOBBY LISTENER (onSnapshot) ---
+        
+        function subscribeToLobby(lobbyId) {
+            if (unsubscribeLobby) unsubscribeLobby(); // Clear previous listener
+
+            const lobbyRef = getLobbyDocRef(lobbyId);
+            
+            unsubscribeLobby = onSnapshot(lobbyRef, (docSnap) => {
+                if (docSnap.exists()) {
+                    const lobbyData = docSnap.data();
+                    renderLobbyDetails(lobbyData);
+                } else {
+                    // Lobby was deleted (e.g., by the host)
+                    if (currentLobbyId === lobbyId) {
+                        displayErrorMessage("The lobby was closed by the host.");
+                        leaveLobby(); // Clean up client side state
+                    }
+                }
+            }, (error) => {
+                console.error("Lobby Snapshot Error:", error);
+                displayErrorMessage("Lost connection to the lobby.");
+                leaveLobby();
+            });
+        }
+        
+        // --- UI RENDERING & EVENT HANDLERS ---
+
+        function enterLobbyView(lobbyId) {
+            currentLobbyIdEl.textContent = lobbyId;
+            lobbyViewEl.classList.add('hidden');
+            gameLobbyViewEl.classList.remove('hidden');
+            subscribeToLobby(lobbyId);
+            updateStatus(`Joined lobby ${lobbyId}. Waiting for players...`);
+        }
+        
+        function exitLobbyView() {
+            lobbyViewEl.classList.remove('hidden');
+            gameLobbyViewEl.classList.add('hidden');
+            playersListEl.innerHTML = '';
+            playerCountEl.textContent = '0';
+        }
+
+        function renderLobbyDetails(lobbyData) {
+            const players = lobbyData.players || [];
+            playersListEl.innerHTML = '';
+            playerCountEl.textContent = players.length;
+
+            const isHost = lobbyData.hostId === userId;
+            startGameBtn.disabled = !isHost || players.length < MIN_PLAYERS_TO_START;
+            
+            if (isHost) {
+                startGameBtn.textContent = players.length < MIN_PLAYERS_TO_START 
+                    ? `Need ${MIN_PLAYERS_TO_START - players.length} more players to start`
+                    : 'START GAME';
+            } else {
+                startGameBtn.textContent = "Waiting for Host to Start...";
+            }
+
+            players.forEach(player => {
+                const li = document.createElement('li');
+                let name = player.name;
+                if (player.id === userId) {
+                    name += " (You)";
+                }
+                if (player.id === lobbyData.hostId) {
+                    name += " ✨Host";
+                }
+                
+                li.className = 'p-2 rounded-md bg-gray-600 flex justify-between items-center';
+                li.textContent = name;
+                playersListEl.appendChild(li);
+            });
+        }
+
+        // --- EVENT LISTENERS ---
+
+        document.getElementById('create-lobby-btn').addEventListener('click', createLobby);
+        
+        document.getElementById('join-lobby-btn').addEventListener('click', () => {
+            const lobbyId = document.getElementById('join-lobby-id').value.trim().toUpperCase();
+            if (lobbyId.length > 0) {
+                joinLobby(lobbyId);
+            } else {
+                displayErrorMessage("Please enter a Lobby ID.");
+            }
+        });
+        
+        leaveLobbyBtn.addEventListener('click', leaveLobby);
+        
+        startGameBtn.addEventListener('click', () => {
+             // In a real game, this would update the Firestore status to 'started' 
+             // and transition all clients to the game screen.
+             displayErrorMessage("Game started! (Feature not fully implemented)");
+             console.log("Game Start Triggered for Lobby:", currentLobbyId);
         });
 
 
-        // 9. CLEANUP 
-        async function removeUserFromLobby(shortId, userId) {
-            if (!userId || !db) return;
-            try {
-                const q = collection(db, BASE_LOBBY_PATH);
-                const querySnapshot = await getDocs(q);
-                let fullDocId = null;
-                querySnapshot.forEach(doc => {
-                    if (doc.data().lobbyId === shortId) {
-                        fullDocId = doc.id;
-                    }
-                });
-
-                if (fullDocId) {
-                    const lobbyDocRef = doc(db, BASE_LOBBY_PATH, fullDocId);
-                    const docSnap = await getDoc(lobbyDocRef);
-                    
-                    if (docSnap.exists()) {
-                        const lobbyData = docSnap.data();
-                        const players = lobbyData.players || {};
-                        delete players[userId];
-                        
-                        const playerKeys = Object.keys(players);
-
-                        if (playerKeys.length === 0) {
-                            // If last player leaves, delete the lobby
-                            await deleteDoc(lobbyDocRef);
-                        } else if (lobbyData.ownerId === userId) {
-                            // Host leaves, pass ownership to the first remaining player
-                            const newOwnerId = playerKeys[0];
-                            await updateDoc(lobbyDocRef, { ownerId: newOwnerId, players: players });
-                        } else {
-                            // Regular player leaves
-                            await updateDoc(lobbyDocRef, { players: players });
-                        }
-                    }
-                }
-            } catch (e) {
-                console.error("Cleanup failed:", e);
-            }
-        }
-
-        function handleLobbyDeletion() {
-             // Triggered when a host deletes the lobby
-             if (currentLobbyId) {
-                currentLobbyId = null;
-                currentLobbyDocId = null;
-                lobbyIdEl.textContent = 'Waiting...';
-                joinInput.value = '';
-                showStatus('The host closed the lobby. Ready to create/join new lobby.', true);
-                showLobbyScreen();
-             }
-        }
-
-        function updatePlayerList(players, ownerId) {
-            playerListEl.innerHTML = '';
-            if (players) {
-                Object.keys(players).forEach(playerId => {
-                    const name = players[playerId];
-                    const isHostDisplay = playerId === ownerId;
-                    const isYou = playerId === currentUserId;
-                    
-                    const status = isHostDisplay ? ' (HOST)' : (isYou ? ' (You)' : '');
-                    
-                    const li = document.createElement('li');
-                    li.className = isYou ? 'font-bold text-green-400' : '';
-                    li.textContent = `${name}${status}`;
-                    playerListEl.appendChild(li);
-                });
-            }
-        }
+        // --- APPLICATION START ---
         
-        // Start the application
         window.onload = initializeFirebase;
 
     </script>
