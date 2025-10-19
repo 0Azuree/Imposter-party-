@@ -103,7 +103,12 @@
                     Your Player ID: <span id="current-user-id" class="break-all font-mono text-xs"></span>
                 </div>
                 
-                <h3 class="text-lg font-semibold mt-4">Players (<span id="player-count">0</span>):</h3>
+                <!-- Player Count Display - Now more prominent -->
+                <div class="text-2xl font-extrabold text-center mt-4 p-2 bg-gray-700 rounded-lg border-b-4 border-[#ff6b6b]">
+                     Active Players: <span id="player-count" class="text-[#48dbfb]">0</span>
+                </div>
+
+                <h3 class="text-lg font-semibold mt-4">Players in Lobby:</h3>
                 <ul id="players-list" class="space-y-2 p-3 rounded-lg bg-gray-700 h-40 overflow-y-auto">
                     <!-- Player names go here -->
                 </ul>
@@ -194,7 +199,7 @@
     <script type="module">
         import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
         import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";
-        import { getFirestore, doc, getDoc, setDoc, onSnapshot, updateDoc } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
+        import { getFirestore, doc, getDoc, setDoc, onSnapshot, updateDoc, deleteDoc, collection } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
         import { setLogLevel } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-firestore.js";
 
         // --- FIREBASE CONFIGURATION SETUP (ROBUST AGAINST EXTERNAL DEPLOYMENT) ---
@@ -257,6 +262,8 @@
         const startGameBtn = document.getElementById('start-game-btn');
         const leaveLobbyBtn = document.getElementById('leave-lobby-btn');
         const leaveGameBtn = document.getElementById('leave-game-btn');
+        
+        const playerCountEl = document.getElementById('player-count'); // Reference for the count
         
         const playerRoleTextEl = document.getElementById('player-role-text');
         const secretWordDisplayEl = document.getElementById('secret-word-display');
@@ -416,7 +423,8 @@
                 role: player.id === imposterId ? 'imposter' : 'crewmate',
                 isEliminated: false,
                 hasVoted: false,
-                vote: null
+                vote: null,
+                name: player.name || `Player_${player.id.substring(0, 4)}` // Ensure names are set
             }));
             
             // 2. Select Secret Word
@@ -426,6 +434,7 @@
             // 3. Set Initial Game State
             const now = Date.now();
             const gameData = {
+                id: lobbyId,
                 status: 'in_game',
                 gameState: 'round_active',
                 secretWord: secretWord,
@@ -463,6 +472,12 @@
                 displayErrorMessage("You are eliminated and cannot submit descriptions.");
                 return;
             }
+            
+            // Do not allow submission if not in active round
+            if (data.gameState !== 'round_active') {
+                displayErrorMessage("Cannot submit description outside of an active round.");
+                return;
+            }
 
             try {
                 // Update the descriptions map with the player's submission
@@ -488,9 +503,10 @@
             const data = docSnap.data();
 
             const localPlayer = data.roles.find(p => p.id === userId);
-            if (!localPlayer || localPlayer.hasVoted) return;
+            if (!localPlayer || localPlayer.hasVoted || localPlayer.isEliminated) return;
 
             try {
+                // Update the local player's vote state
                 const updatedRoles = data.roles.map(p => {
                     if (p.id === userId) {
                         return { ...p, hasVoted: true, vote: votedPlayerId };
@@ -498,11 +514,12 @@
                     return p;
                 });
 
-                const newVoteCount = data.roles.filter(p => p.hasVoted).length + 1;
+                // Calculate the number of votes cast *after* this one
+                const newVoteCount = updatedRoles.filter(p => p.hasVoted).length;
                 
                 await updateDoc(lobbyRef, {
                     roles: updatedRoles,
-                    voteCount: newVoteCount 
+                    voteCount: newVoteCount // This triggers the host to check results
                 });
                 updateStatus(`Voted. Waiting for others.`);
 
@@ -521,18 +538,29 @@
             // Tally votes
             const tallies = {};
             data.roles.forEach(p => {
-                if (p.vote) {
+                if (p.vote) { // Null vote is skip, not tallied
                     tallies[p.vote] = (tallies[p.vote] || 0) + 1;
                 }
             });
 
-            const voteResults = Object.entries(tallies).sort(([, a], [, b]) => b - a);
-            const [ejectedId, maxVotes] = voteResults[0] || [null, 0];
-            const tied = voteResults.length > 1 && voteResults[1][1] === maxVotes;
+            // Find the maximum number of votes
+            let maxVotes = 0;
+            let ejectedId = null;
+            let tied = false;
 
-            let ejectedPlayer = null;
-            let updateData = { gameState: 'round_active', currentRound: data.currentRound + 1 }; // Default: resume to next round
+            for (const [id, count] of Object.entries(tallies)) {
+                if (count > maxVotes) {
+                    maxVotes = count;
+                    ejectedId = id;
+                    tied = false;
+                } else if (count === maxVotes && maxVotes > 0) {
+                    tied = true;
+                }
+            }
             
+            let ejectedPlayer = null;
+            let updateData = {}; 
+
             if (ejectedId && !tied) {
                 // Eject the player with the most votes (no tie)
                 ejectedPlayer = data.roles.find(p => p.id === ejectedId);
@@ -542,28 +570,30 @@
                     }
                     return p;
                 });
+                
+                const imposterEjected = ejectedPlayer.role === 'imposter';
 
                 updateData = {
                     roles: updatedRoles,
-                    gameState: 'finished', // Check for win/loss immediately
-                    // The winner will be determined in renderGameView
+                    // Determine end state
+                    status: imposterEjected ? 'finished' : 'in_game',
+                    gameState: 'cooldown', // Always go to cooldown after a vote/ejection
+                    winner: imposterEjected ? 'crewmate' : null,
+                    // If continuing, set up the next round/cooldown
+                    currentRound: data.currentRound, 
+                    roundEndTime: imposterEjected ? null : Date.now() + COOLDOWN_DURATION_SECONDS * 1000, 
                 };
                 
             } else {
                 // Tie or no votes cast (skip vote) - return to game
                 updateData = {
-                    gameState: 'round_active',
-                    currentRound: data.currentRound < TOTAL_ROUNDS ? data.currentRound + 1 : data.currentRound,
-                    roundEndTime: Date.now() + ROUND_DURATION_SECONDS * 1000,
-                    descriptions: {},
+                    gameState: 'cooldown', // Always move to cooldown after a skipped or tied vote
+                    currentRound: data.currentRound, 
+                    roundEndTime: Date.now() + COOLDOWN_DURATION_SECONDS * 1000,
                 };
-                // If it's the last round, and there's a tie/no ejection, the Imposter wins by default
-                if (data.currentRound === TOTAL_ROUNDS) {
-                    endGame(data.id, 'imposter', data.roles);
-                    return;
-                }
+                updateStatus("Host: Vote resulted in a tie or skip. Moving to cooldown.");
             }
-
+            
             // Reset voting state and apply elimination (if any)
             updateData.roles = updateData.roles || data.roles;
             updateData.roles = updateData.roles.map(p => ({
@@ -582,7 +612,14 @@
             const lobbyRef = getLobbyDocRef(lobbyId);
             try {
                 const docSnap = await getDoc(lobbyRef);
-                if (docSnap.exists() && docSnap.data().gameState !== 'voting') {
+                const data = docSnap.data();
+
+                if (data.hostId !== userId) {
+                    displayErrorMessage("Only the host can call an emergency vote.");
+                    return;
+                }
+
+                if (data.gameState !== 'voting') {
                     await updateDoc(lobbyRef, {
                         gameState: 'voting',
                         votingReason: `Emergency Vote called by Host!`,
@@ -600,7 +637,7 @@
             if (hostTimerInterval) clearInterval(hostTimerInterval);
 
             // Only host updates the final state
-            if (roles.find(p => p.id === userId)?.role === 'imposter' || roles.find(p => p.id === userId)?.isHost) {
+            if (roles.find(p => p.id === userId)?.role === 'imposter' || roles.find(p => p.id === userId)?.isHost || data.hostId === userId) {
                  await updateDoc(lobbyRef, {
                     status: 'finished',
                     gameState: 'finished',
@@ -655,39 +692,48 @@
             const localPlayer = data.roles.find(p => p.id === userId);
             localPlayerRole = localPlayer ? localPlayer.role : null;
             
-            // Check win condition on every update (Crewmates win if Imposter is eliminated)
+            // Check win condition on every update (Crewmates win if Imposter is eliminated, or Imposter wins if all rounds are over and they are safe)
             const imposterEliminated = data.roles.find(p => p.role === 'imposter' && p.isEliminated);
+            const activeCrewmates = data.roles.filter(p => p.role === 'crewmate' && !p.isEliminated);
+
             if (imposterEliminated) {
                 endGame(data.id, 'crewmate', data.roles);
                 return;
             }
             
+            // Imposter wins if there are not enough crewmates left
+            if (activeCrewmates.length <= IMPOSTER_COUNT) {
+                endGame(data.id, 'imposter', data.roles);
+                return;
+            }
+            
             // Imposter wins if all rounds are over and they haven't been caught
-            if (data.gameState === 'round_active' && data.currentRound > TOTAL_ROUNDS) {
+            if (data.gameState === 'cooldown' && data.currentRound > TOTAL_ROUNDS) {
                  endGame(data.id, 'imposter', data.roles);
                  return;
             }
 
             if (data.gameState === 'voting') {
-                votingViewEl.classList.remove('hidden');
                 gameActiveViewEl.classList.add('hidden');
+                votingViewEl.classList.remove('hidden');
                 renderVotingView(data);
                 // Host checks vote result once all votes are in
                 if (data.hostId === userId) {
                      checkVoteResult(data);
                 }
             } else {
-                gameActiveViewEl.classList.remove('hidden');
                 votingViewEl.classList.add('hidden');
+                gameActiveViewEl.classList.remove('hidden');
                 renderActiveGameView(data);
             }
         }
         
         function renderLobbyDetails(lobbyData) {
-            // Existing lobby rendering logic... (omitted for brevity, assume it works)
             const players = lobbyData.players || [];
             playersListEl.innerHTML = '';
-            document.getElementById('player-count').textContent = players.length;
+            
+            // Update the prominent player count
+            playerCountEl.textContent = players.length; 
 
             const isHost = lobbyData.hostId === userId;
             startGameBtn.disabled = !isHost || players.length < MIN_PLAYERS_TO_START;
@@ -718,7 +764,7 @@
         
         function renderActiveGameView(data) {
             const localPlayer = data.roles.find(p => p.id === userId);
-            const isEliminated = localPlayer.isEliminated;
+            const isEliminated = localPlayer?.isEliminated || false;
             const isHost = data.hostId === userId;
             
             // 1. Role and Word Display
@@ -747,10 +793,14 @@
             const isActive = data.gameState === 'round_active';
             
             descriptionInputEl.disabled = submitted || !isActive || isEliminated;
-            submitDescriptionBtn.disabled = submitted || !isActive || isEliminated;
+            submitDescriptionBtn.disabled = submitted || !isActive || isEliminated || !descriptionInputEl.value.trim();
             
             submissionStatusEl.classList.toggle('hidden', !submitted);
             submissionStatusEl.textContent = submitted ? 'Submitted!' : '';
+            
+            descriptionInputEl.oninput = () => {
+                 submitDescriptionBtn.disabled = submitted || !isActive || isEliminated || !descriptionInputEl.value.trim();
+            };
 
             // 5. Descriptions List
             descriptionsListEl.innerHTML = '';
@@ -778,7 +828,7 @@
             }
             
             // 6. Host Button
-            callVoteBtn.disabled = !isHost || data.gameState === 'cooldown';
+            callVoteBtn.disabled = !isHost || data.gameState === 'cooldown' || data.gameState === 'voting';
         }
         
         function renderVotingView(data) {
@@ -787,7 +837,7 @@
             
             const localPlayer = data.roles.find(p => p.id === userId);
             
-            if (localPlayer.isEliminated) {
+            if (!localPlayer || localPlayer.isEliminated) {
                 votingListEl.innerHTML = '<li class="text-center p-4 text-yellow-400">You are eliminated and cannot vote.</li>';
                 skipVoteBtn.disabled = true;
                 return;
@@ -801,7 +851,9 @@
             playersToVote.forEach(player => {
                 const li = document.createElement('li');
                 li.className = 'p-2 rounded-md bg-gray-600 flex justify-between items-center';
-                li.textContent = player.name;
+                
+                const playerName = player.name + (player.id === userId ? ' (You)' : '');
+                li.textContent = playerName;
 
                 if (player.id !== userId) {
                     const voteBtn = document.createElement('button');
@@ -810,8 +862,6 @@
                     voteBtn.disabled = hasVoted;
                     voteBtn.addEventListener('click', () => submitVote(player.id, data.id));
                     li.appendChild(voteBtn);
-                } else {
-                    li.textContent += ' (You)';
                 }
                 
                 votingListEl.appendChild(li);
@@ -832,6 +882,7 @@
             
             const winner = data.winner === 'crewmate' ? 'CREWMATES WIN!' : 'IMPOSTER WINS!';
             winMessageEl.textContent = winner;
+            winMessageEl.classList.remove('text-green-500', 'text-red-500'); // Clear previous classes
             winMessageEl.classList.add(data.winner === 'crewmate' ? 'text-green-500' : 'text-red-500');
 
             finalSecretWordEl.textContent = data.secretWord;
@@ -887,8 +938,8 @@
              // Reset the document and go back to the main menu
              const lobbyRef = getLobbyDocRef(currentLobbyId);
              if (currentLobbyId && lobbyRef) {
-                 // For now, delete the document to clear the game state
-                 updateDoc(lobbyRef, { status: 'waiting', roles: null, secretWord: null }).then(() => {
+                 // Clear the game state but keep the lobby open
+                 updateDoc(lobbyRef, { status: 'waiting', gameState: null, roles: null, secretWord: null, winner: null, currentRound: 0 }).then(() => {
                       leaveLobby(false);
                  }).catch(e => {
                      console.error("Error cleaning up game state:", e);
@@ -951,7 +1002,6 @@
         }
         
         async function joinLobby(lobbyId) {
-            // Existing join lobby logic (omitted for brevity, assume it works)
             if (!userId || !lobbyId) return;
 
             const lobbyRef = getLobbyDocRef(lobbyId);
@@ -974,6 +1024,8 @@
                          subscribeToLobby(lobbyId); // Go straight to game view
                          return;
                     }
+                    displayErrorMessage("Game is already in progress and you are not a participant.");
+                    return;
                 } else if (lobbyData.status !== 'waiting') {
                     displayErrorMessage(`Lobby ${lobbyId} is in an unknown state: ${lobbyData.status}.`);
                     return;
@@ -992,8 +1044,7 @@
                 }
 
                 currentLobbyId = lobbyId;
-                enterLobbyView(lobbyId);
-
+                subscribeToLobby(lobbyId); // Now use subscribe to start the listener
             } catch (error) {
                 displayErrorMessage(`Error joining lobby: ${error.message}`);
                 console.error("Error joining lobby:", error);
@@ -1001,7 +1052,6 @@
         }
 
         async function leaveLobby(isGameQuit = false) {
-             // Existing leave lobby logic (omitted for brevity, assume it works)
             if (!currentLobbyId || !userId) return;
 
             if (hostTimerInterval) clearInterval(hostTimerInterval);
@@ -1036,13 +1086,8 @@
                         
                         await updateDoc(lobbyRef, updateData);
                     } else {
-                         // Only delete if the host leaves in the waiting state
-                         if (lobbyData.status === 'waiting') {
-                            await deleteDoc(lobbyRef);
-                         } else {
-                            // In game, leave the doc but don't delete until all leave
-                            await updateDoc(lobbyRef, { roles: null });
-                         }
+                         // Delete the document if the last player leaves
+                        await deleteDoc(lobbyRef);
                     }
                 }
             } catch (error) {
