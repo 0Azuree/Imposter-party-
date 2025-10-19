@@ -156,34 +156,40 @@
         // ===============================================================
         // --- GUARDED CONFIGURATION AND AUTH SETUP ---
         
-        // 1. Initialize variables from environment or use placeholders
         let firebaseConfig;
-        const appId = typeof __app_id !== 'undefined' ? __app_id : 'imposter-default-app';
+        // Use the actual project ID as the fallback for Canvas's __app_id if running externally
+        const FALLBACK_PROJECT_ID = 'impostergame-dev'; 
+        const appId = typeof __app_id !== 'undefined' ? __app_id : FALLBACK_PROJECT_ID;
         let initialAuthToken = typeof __initial_auth_token !== 'undefined' ? __initial_auth_token : null;
         
-        // 2. Safely parse the environment configuration
+        // 1. Try to load config from the Canvas environment variables
         try {
             const globalConfigString = typeof __firebase_config !== 'undefined' ? __firebase_config : '{}';
             firebaseConfig = JSON.parse(globalConfigString);
             
-            // Validate that the parsed config has a project ID (minimal check)
-            if (!firebaseConfig || !firebaseConfig.projectId) {
-                throw new Error("Parsed config is invalid or empty.");
+            // Validate that the config has the necessary keys
+            if (!firebaseConfig || !firebaseConfig.projectId || !firebaseConfig.apiKey) {
+                throw new Error("System config is missing or invalid. Requires manual config.");
             }
 
         } catch (e) {
-            // 3. Fallback to a hardcoded config that supports anonymous sign-in
-            console.warn("System config failed to load/parse. Using minimal fallback config.", e);
+            // 2. FALLBACK for external hosting: Using the configuration provided by the user
+            console.warn("System config failed to load/parse. Using user-provided Firebase config.");
             
-            // FIX: Use a configuration that is less likely to trigger (auth/configuration-not-found)
-            // by using the appId as the project identifier in multiple places.
+            // --- USER'S FIREBASE CONFIGURATION (FIXED) ---
+            // This configuration will be used when the app is hosted outside the Canvas environment.
             firebaseConfig = {
-                apiKey: `AIzaSy${appId.substring(0, 10)}X1-fallback-key`, // Unique-ish placeholder key
-                authDomain: `${appId}.firebaseapp.com`,
-                projectId: appId,
-                storageBucket: `${appId}.appspot.com`,
+                apiKey: "AIzaSyCWEJOsUXTjdkYPUF_Iz6j5siieTJw5Rs0",
+                authDomain: "impostergame-dev.firebaseapp.com",
+                projectId: "impostergame-dev",
+                storageBucket: "impostergame-dev.firebasestorage.app",
+                messagingSenderId: "619697208061",
+                appId: "1:619697208061:web:0a62ff8e6a9a701140dc94",
+                measurementId: "G-C1HWQ86HV3"
             };
-            initialAuthToken = null; // Cannot use custom token with a fallback config
+            // ---------------------------------------------
+            
+            initialAuthToken = null; 
         }
         // ===============================================================
 
